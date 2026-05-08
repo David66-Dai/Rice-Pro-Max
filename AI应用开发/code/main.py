@@ -1,9 +1,9 @@
-from disease import disease
-from weather import weather
-from soil import soil_analysis
-from rice_yield import rice_yield
-from hdfs_put import hdfs
-from hive_data import RiceDataLoader
+from AI应用开发.code.disease import disease
+from AI应用开发.code.weather import weather
+from AI应用开发.code.soil import soil_analysis
+from AI应用开发.code.rice_yield import rice_yield
+from AI应用开发.code.hdfs_put import hdfs
+from AI应用开发.code.hive_data import RiceDataLoader
 import pandas as pd
 import json
 import re
@@ -95,7 +95,7 @@ def load_resources(
     hive_port       : int = 10000
 ) -> PipelineResources:
     """统一加载所有数据资源：Hive 数据 + Dify API 配置。"""
-    ###  初始化 Hive 数据加载器（演示）
+    # 初始化 Hive 数据加载器
     hive = RiceDataLoader(
         host=hive_host,
         port=hive_port,
@@ -109,17 +109,16 @@ def load_resources(
             f"Hive 连接失败！请检查 host={hive_host}, port={hive_port}, "
             f"user={hive_user}, database={hive_database}"
         )
-    ### 
 
     weather_api_url, weather_api_key = load_dify_workflow_run_config("api/workflow_api_02.json")
     soil_api_url, soil_api_key = load_dify_workflow_run_config("api/workflow_api_03.json")
     disease_api_url, disease_api_key = load_dify_workflow_run_config("api/workflow_api_01.json")
     final_api_url, final_api_key = load_dify_workflow_run_config("api/workflow_api_04.json")
     return PipelineResources(
-        management_df=hive.load_disease(),       # 从 Hive 读取病虫害数据（演示）
-        weather_df=hive.load_weather(),          # 从 Hive 读取气象数据（演示）
-        soil_df=hive.load_soil(),                # 从 Hive 读取土壤数据（演示）
-        yield_df=hive.load_yield(),              # 从 Hive 读取产量基线数据（演示）
+        management_df=hive.load_disease(),       # 从 Hive 读取病虫害数据
+        weather_df=hive.load_weather(),          # 从 Hive 读取气象数据
+        soil_df=hive.load_soil(),                # 从 Hive 读取土壤数据
+        yield_df=hive.load_yield(),              # 从 Hive 读取产量基线数据
         disease_api_url=disease_api_url,
         disease_api_key=disease_api_key,
         weather_api_url=weather_api_url,
@@ -209,7 +208,6 @@ def run_final_workflow(
     return main_output1, main_output2
 
 if __name__ == "__main__":
-    ### 全局配置参数（不做演示）
     TARGET_DATE = "2025-05-08" # 目标日期   
     HDFS_HOST = "192.168.157.130"
     HIVE_HOST = "192.168.157.130"
@@ -220,7 +218,6 @@ if __name__ == "__main__":
     HIVE_DATABASE = "farm"
     HDFS_PATH = f"/rice/output/{TARGET_DATE}"
 
-    ### 导入资源、创建hdfs实例（演示）
     resources = load_resources(
         hive_host=HIVE_HOST,
         hive_user=HIVE_USER,
@@ -229,33 +226,21 @@ if __name__ == "__main__":
     )
     print("[info] hive连接成功，数据资源加载完成")
     hdfs_client = hdfs(namenode_host=HDFS_HOST, namenode_port=HDFS_PORT, user=HDFS_USER)
-    ###
-
-    ### 使用 Session 复用 HTTP 连接，减少重复握手开销（演示）
+    
     with requests.Session() as session:
-        
-        ### 创建HDFS目录（演示）
         hdfs_client.mkdirs(HDFS_PATH)
-        ###
-        
         for station_num in range(1, 31):
             print(f"=========================开始处理站点{station_num}=========================")
-            
-            ### 构建输入(获取虫害、气象、土壤、产量的Dify返回值)（演示）
             input1, input2, input3, input4 = build_inputs(
                 target_date=TARGET_DATE,
                 station_num=station_num,
                 resources=resources,
                 session=session,
             )
-            ###
-
             disease_output = parse_json_like(input1[0])
             weather_output = parse_json_like(input2[0])
             soil_output = parse_json_like(input3[0])
             yield_output = {"yield_output": input4}
-            
-            ### 上传HDFS（演示）
             hdfs_client.upload_json(
                 disease_output,
                 f"{HDFS_PATH}/point_{station_num}/disease_output.json",
@@ -276,8 +261,6 @@ if __name__ == "__main__":
                 f"{HDFS_PATH}/point_{station_num}/yield_output.json",
             )
             print("[info] 保存产量输出到hdfs成功")
-            ###
-
             print(f"=========================开始推演决策=========================")
             output1, output2 = run_final_workflow(
                 input1[1],

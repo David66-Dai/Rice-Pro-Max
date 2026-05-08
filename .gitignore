@@ -9,3 +9,9 @@ checkpoints/
 
 # IDE
 .vscode/
+.cursor/
+.idea/
+
+# api
+api/__pycache__/
+AI应用开发/api/
