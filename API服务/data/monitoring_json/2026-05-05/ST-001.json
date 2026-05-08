@@ -1,0 +1,135 @@
+{
+  "point": "ST-001",
+  "Date": "2026-05-05",
+  "records": [
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 36.66,
+      "BrownSpotRate": 2.49,
+      "TungroVirusRate": 60.39,
+      "PestRphNum": 0,
+      "PestScsNum": 0,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 36.66,
+      "BrownSpotRate": 2.49,
+      "TungroVirusRate": 60.39,
+      "PestRphNum": 0,
+      "PestScsNum": 0,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 100.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 0,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 0,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 99.99,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.01,
+      "PestRphNum": 0,
+      "PestScsNum": 0,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 0,
+      "PestCmNum": 1
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 1,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-001",
+      "Date": "2026-05-05",
+      "GrowthPeriod": "拔节孕穗期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 1,
+      "PestScsNum": 0,
+      "PestCmNum": 0
+    }
+  ],
+  "mergedInspectItems": [
+    {
+      "key": "leaf_blight",
+      "name": "细菌性叶枯病",
+      "level": "danger"
+    },
+    {
+      "key": "leaf_brown_spot",
+      "name": "褐斑病",
+      "level": "danger"
+    },
+    {
+      "key": "leaf_tungro",
+      "name": "东格鲁病害",
+      "level": "danger"
+    },
+    {
+      "key": "pest_borer",
+      "name": "二化螟",
+      "level": "warn"
+    },
+    {
+      "key": "pest_planthopper",
+      "name": "褐飞虱",
+      "level": "warn"
+    },
+    {
+      "key": "pest_leafroller",
+      "name": "稻纵卷叶螟",
+      "level": "warn"
+    }
+  ],
+  "updatedAt": "2026-05-06 15:34:55"
+}

@@ -1,0 +1,11 @@
+# 水稻害虫检测数据集配置（YOLO 格式）
+# 将图片放入 images/train、images/val，对应标签放入 labels/train、labels/val
+# 不要写 path: . —— Ultralytics 会把「.」当成「运行目录」，应省略 path，根目录自动为本 yaml 所在文件夹 data/
+
+train: images/train
+val: images/val
+
+names:
+  0: 二化螟
+  1: 稻纵卷叶螟
+  2: 褐飞虱
