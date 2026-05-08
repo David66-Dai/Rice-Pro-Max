@@ -6,3 +6,6 @@ runs/
 checkpoints/
 *.pt
 .DS_Store
+
+# IDE
+.vscode/
