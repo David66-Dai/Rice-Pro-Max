@@ -1,9 +1,9 @@
-from AI应用开发.code.disease import disease
-from AI应用开发.code.weather import weather
-from AI应用开发.code.soil import soil_analysis
-from AI应用开发.code.rice_yield import rice_yield
-from AI应用开发.code.hdfs_put import hdfs
-from AI应用开发.code.hive_data import RiceDataLoader
+from disease import disease
+from weather import weather
+from soil import soil_analysis
+from rice_yield import rice_yield
+from hdfs_put import hdfs
+from hive_data import RiceDataLoader
 import pandas as pd
 import json
 import re
