@@ -1,4 +1,4 @@
-# 🌾 智慧农业 — 水稻病虫害智能诊断与监测平台
+﻿# 🌾 智慧农业 — 水稻病虫害智能诊断与监测平台
 
 基于深度学习的**水稻叶害识别**与**虫害检测**综合平台，集成了算法训练、后端 API 服务、前端可视化大屏，实现从"图像采集 → AI 诊断 → 风险评级 → 监测入库 → 决策推演"的全链路智慧农业解决方案。
 
@@ -7,63 +7,91 @@
 ## 📁 项目结构
 
 ```
-智慧农业/
-├── README.md                          # 项目总览（本文件）
+Rice-Pro-Max/
+├── README.md                              # 项目总览（本文件）
 │
-├── 算法开发/                           # 模型训练与算法实验
-│   ├── 虫害算法开发/                   # YOLO11x 水稻害虫检测
-│   │   ├── train.py                   #   训练脚本
-│   │   ├── predict.py                 #   CLI 推理脚本
-│   │   ├── gradio_app.py              #   Gradio 可视化测试页面
-│   │   ├── requirements.txt           #   Python 依赖
-│   │   ├── yolo11x.pt                 #   预训练权重（自动下载）
-│   │   ├── yolo26n.pt                 #   备用权重
-│   │   ├── data/                      #   数据集
-│   │   │   ├── dataset.yaml           #     数据集配置（3 类害虫）
-│   │   │   ├── images/train/          #     训练图片
-│   │   │   ├── images/val/            #     验证图片
-│   │   │   └── labels/train/         #     YOLO 格式标注
-│   │   └── runs/                      #   训练输出
+├── 算法开发/                               # 模型训练与算法实验
+│   ├── 演示路线图.md                       #   竞赛演示路线图（8~10分钟）
+│   ├── 虫害算法开发/                       #   YOLO11x 水稻害虫检测
+│   │   ├── train.py                       #     训练脚本
+│   │   ├── predict.py                     #     CLI 推理脚本
+│   │   ├── gradio_app.py                  #     Gradio 可视化测试页面
+│   │   ├── requirements.txt               #     Python 依赖
+│   │   ├── data/                          #     数据集
+│   │   │   ├── dataset.yaml               #       数据集配置（3 类害虫）
+│   │   │   ├── images/train/              #       训练图片
+│   │   │   ├── images/val/                #       验证图片
+│   │   │   └── labels/train/              #       YOLO 格式标注
+│   │   └── Test/                          #     虫害测试图片
+│   │       ├── 二化螟.png
+│   │       ├── 稻纵卷叶螟.png
+│   │       └── 褐飞虱.png
 │   │
-│   └── 叶害算法开发/                   # ResNet18 水稻叶片病害分类
-│       ├── train.py                   #   训练脚本
-│       ├── predict.py                 #   CLI 推理脚本
-│       ├── requirements.txt           #   Python 依赖
-│       ├── checkpoints/               #   模型检查点
-│       │   ├── best_model.pt          #     最佳模型权重
-│       │   └── best_model.json        #     模型元信息
-│       └── Original Image/            #   原始数据集（按类别分文件夹）
-│           ├── Bacterial Leaf Blight/ #     细菌性叶枯病
-│           ├── Brown Spot/            #     褐斑病
-│           ├── Healthy Leaf/          #     健康叶片
-│           └── Tungro Virus/          #     东格鲁病毒
+│   └── 叶害算法开发/                       #   ResNet18 水稻叶片病害分类
+│       ├── train.py                       #     训练脚本
+│       ├── predict.py                     #     CLI 推理脚本
+│       ├── requirements.txt               #     Python 依赖
+│       ├── Test/                          #     叶害测试图片
+│       └── Original Image/                #     原始数据集（按类别分文件夹）
+│           ├── Bacterial Leaf Blight/     #       细菌性叶枯病
+│           ├── Brown Spot/                #       褐斑病
+│           ├── Healthy Leaf/              #       健康叶片
+│           └── Tungro Virus/              #       东格鲁病毒
 │
-├── api_service/                       # FastAPI 后端服务
-│   ├── app.py                         #   主服务入口（含所有 API）
-│   ├── requirements.txt               #   Python 依赖
-│   ├── README.md                      #   后端文档
-│   ├── model_weights/                 #   模型权重（供 API 加载）
-│   │   ├── leaf/best_model.pt         #     叶害分类模型
-│   │   └── pest/best.pt              #     虫害检测模型
-│   └── data/                          #   监测数据持久化
-│       ├── monitoring_records.csv     #     CSV 记录
-│       └── monitoring_json/           #     按日期+站点的 JSON
+├── API服务/                               # FastAPI 后端服务
+│   ├── app.py                             #   主服务入口（含所有 API）
+│   ├── requirements.txt                   #   Python 依赖
+│   ├── README.md                          #   后端文档
+│   ├── model_weights/                     #   模型权重（供 API 加载）
+│   │   ├── leaf/best_model.pt             #     叶害分类模型
+│   │   └── pest/best.pt                   #     虫害检测模型
+│   ├── data/                              #   监测数据持久化
+│   │   ├── monitoring_records.csv         #     CSV 记录
+│   │   └── monitoring_json/               #     按日期+站点的 JSON
+│   ├── 叶害识别测试图片/                    #   叶害测试图片
+│   └── 虫害识别测试图片/                    #   虫害测试图片
 │
-├── rice_pro_max/                      # Vue 3 前端大屏
-│   ├── index.html                     #   入口 HTML
-│   ├── package.json                   #   Node 依赖
-│   ├── vite.config.js                 #   Vite 配置（含 API 代理）
-│   ├── README.md                      #   前端文档
+├── 前端开发/                               # Vue 3 前端大屏
+│   ├── index.html                         #   入口 HTML
+│   ├── package.json                       #   Node 依赖
+│   ├── vite.config.js                     #   Vite 配置（含 API 代理）
+│   ├── README.md                          #   前端文档
+│   ├── chart_data/                        #   图表静态数据
+│   │   ├── chart1_total_yield.csv         #     总产量趋势
+│   │   ├── chart2_station_avg_yield.csv   #     站点平均产量
+│   │   ├── chart3_sunshine.csv            #     日照数据
+│   │   ├── chart4_rainfall.csv            #     降雨数据
+│   │   └── chart5_temperature.csv         #     温度数据
+│   ├── public/                            #   公共静态资源
 │   └── src/
-│       ├── main.js                    #   应用入口
-│       ├── App.vue                    #   主组件（核心业务逻辑）
-│       ├── style.css                  #   全局样式
+│       ├── main.js                        #   应用入口
+│       ├── App.vue                        #   主组件（核心业务逻辑）
+│       ├── style.css                      #   全局样式
 │       ├── api/
-│       │   └── agriDiagnosis.js       #   后端 API 调用封装
-│       └── assets/                    #   静态资源
+│       │   └── agriDiagnosis.js           #   后端 API 调用封装
+│       ├── assets/                        #   静态资源（稻田背景图等）
+│       └── components/
+│           ├── HelloWorld.vue             #   欢迎页组件
+│           └── HistoryCharts.vue          #   历史数据图表组件
 │
-├── 虫害识别测试图片/                    # 虫害测试图片
-└── 叶害识别测试图片/                    # 叶害测试图片
+└── AI应用开发/                             # AI应用集成与数据管道
+    ├── code/                              #   核心 Python 模块
+    │   ├── main.py                        #     主流水线入口（Dify 编排）
+    │   ├── main_ys.py                     #     原始版主流水线
+    │   ├── disease.py                     #     病虫害数据分析模块
+    │   ├── weather.py                     #     气象数据接入模块
+    │   ├── soil.py                        #     土壤分析模块
+    │   ├── rice_yield.py                  #     水稻产量多因子预测模型
+    │   ├── hdfs_put.py                    #     HDFS WebHDFS 上传客户端
+    │   └── hive_data.py                   #     Hive 数据加载器
+    ├── api/                               #   Dify Workflow API 配置
+    │   ├── workflow_api_01.json           #     病虫害分析工作流
+    │   ├── workflow_api_02.json           #     气象分析工作流
+    │   ├── workflow_api_03.json           #     土壤分析工作流
+    │   └── workflow_api_04.json           #     综合分析工作流
+    └── 说明文档/                           #   模块使用文档
+        ├── data_loader.md                 #     RiceDataLoader 调用说明
+        └── hdfs_put.md                    #     HDFS 客户端调用说明
 ```
 
 ---
@@ -72,11 +100,15 @@
 
 | 模块 | 技术栈 | 说明 |
 |------|--------|------|
-| **虫害检测** | YOLO11x + Ultralytics | 目标检测，识别 3 类水稻害虫 |
-| **叶害分类** | ResNet18 + PyTorch | 图像分类，识别 4 种叶片状态 |
-| **后端 API** | FastAPI + Uvicorn | RESTful 接口，支持图片上传诊断 |
+| **虫害检测** | YOLO11x + Ultralytics | 目标检测，识别 3 类水稻害虫（二化螟/稻纵卷叶螟/褐飞虱） |
+| **叶害分类** | ResNet18 + PyTorch | 图像分类，识别 4 种叶片状态（迁移学习） |
+| **后端 API** | FastAPI + Uvicorn | RESTful 接口，支持图片上传诊断与监测记录管理 |
+| **前端大屏** | Vue 3 + Vite | 交互式稻田监测看板，28 站点可视化 |
+| **数据管道** | Dify Workflow | 多工作流编排：病虫害→气象→土壤→综合分析 |
+| **产量预测** | 多因子乘法修正模型 | 基于病害/虫害/土壤/气象/生长 5 因子动态预测 |
+| **数据加载** | SQLAlchemy + PyHive | 从 Hive 数据仓库统一读取气象/病虫害/土壤/产量表 |
+| **数据存储** | WebHDFS REST API | JSON 结果上传至 HDFS 分布式文件系统 |
 | **数据持久化** | CSV + JSON + MySQL | 三级存储，双写保障 |
-| **前端大屏** | Vue 3 + Vite | 交互式稻田监测看板 |
 | **推理加速** | CUDA / CPU | 自动检测 GPU 可用性 |
 
 ---
@@ -114,7 +146,7 @@
 ### 1. 启动后端 API 服务
 
 ```bash
-cd api_service
+cd API服务
 
 # 安装依赖
 pip install -r requirements.txt
@@ -136,7 +168,7 @@ API 服务启动后，可通过以下端点访问：
 ### 2. 启动前端大屏
 
 ```bash
-cd rice_pro_max
+cd 前端开发
 
 # 安装依赖
 npm install
@@ -228,8 +260,8 @@ python gradio_app.py
 
 系统采用三级存储策略：
 
-1. **CSV 文件**：`api_service/data/monitoring_records.csv`，追加写入
-2. **JSON 文件**：`api_service/data/monitoring_json/{日期}/{站点}.json`，按站点聚合
+1. **CSV 文件**：`API服务/data/monitoring_records.csv`，追加写入
+2. **JSON 文件**：`API服务/data/monitoring_json/{日期}/{站点}.json`，按站点聚合
 3. **MySQL 数据库**（可选）：自动建表 `pest_disease_monitoring`，通过环境变量配置连接
 
 ### MySQL 环境变量
@@ -268,21 +300,90 @@ python gradio_app.py
 
 ---
 
+## 🔗 AI应用集成 — Dify 工作流管道
+
+`AI应用开发/code/` 目录包含一套完整的 **Dify 多工作流编排管道**，实现从原始数据到分析结果的自动化处理链路。
+
+### 工作流执行流程
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ Workflow │───▶│ Workflow │───▶│ Workflow │───▶│ Workflow │
+│   01     │    │   02     │    │   03     │    │   04     │
+│ 病虫害分析 │    │ 气象分析  │    │ 土壤分析  │    │ 综合分析  │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+      │               │               │               │
+      ▼               ▼               ▼               ▼
+  disease.py      weather.py      soil.py        main.py
+  (病害/虫害)      (日照/温湿度)    (有机质/pH)     (汇总+产量预测)
+```
+
+### 核心模块说明
+
+| 模块 | 文件 | 功能 |
+|------|------|------|
+| **病虫害分析** | `disease.py` | 叶害覆盖率计算（白叶枯/褐斑/东格鲁）+ 虫害数量统计（稻飞虱/二化螟/稻纵卷叶螟） |
+| **气象接入** | `weather.py` | 日均温度/湿度/日照/降水/风速/气压多维度气象数据处理 |
+| **土壤分析** | `soil.py` | 有机质/pH/磷/钾/电导率综合土壤肥力评估 |
+| **产量预测** | `rice_yield.py` | 五因子乘法修正模型：产量 = 基线产量 × f(病害) × f(虫害) × f(土壤) × f(气象) × f(生长) |
+| **HDFS 上传** | `hdfs_put.py` | 基于 WebHDFS REST API，支持建目录、上传 JSON、上传文件 |
+| **Hive 加载** | `hive_data.py` | 通过 SQLAlchemy + PyHive 从 Hive 统一读取气象/病虫害/土壤/产量数据 |
+| **主管道** | `main.py` | Dify 工作流编排入口，串联全部子模块并汇总结果 |
+| **原始管道** | `main_ys.py` | 原始版主管道（不依赖 Dify 工作流，直接调用各模块） |
+
+### 产量预测模型
+
+$$Y_{pred} = Y_{base} \times f_{disease} \times f_{pest} \times f_{soil} \times f_{weather} \times f_{growth}$$
+
+每个修正因子 $f \in [0.4, 1.2]$，最优条件趋近 1.0：
+
+| 因子 | 参考最优值 | 影响机制 |
+|------|-----------|----------|
+| 日均温度 | 26°C | 偏离最适温度则产量下降 |
+| 土壤 pH | 6.5 | 过酸/过碱限制养分吸收 |
+| 有机质 | 3.0% | 有机质越高土壤肥力越强 |
+| 日照时长 | 6 h/天 | 光合作用基础保障 |
+| 周降水量 | 50 mm | 水分胁迫影响灌浆 |
+
+### Hive 数据加载
+
+```python
+from AI应用开发.code.hive_data import RiceDataLoader
+
+loader = RiceDataLoader(host="hive-server", port=10000, user="hive", database="rice_db")
+weather_df = loader.load_weather()    # 小时气象 → 日尺度聚合
+disease_df = loader.load_disease()    # 病虫害监测数据
+soil_df    = loader.load_soil()       # 土壤理化指标
+yield_df   = loader.load_yield()      # 产量基线数据
+```
+
+### HDFS 结果上传
+
+```python
+from AI应用开发.code.hdfs_put import hdfs
+
+client = hdfs(namenode_host="namenode-host", namenode_port=9870, user="hdfs")
+client.mkdirs("/user/danglong/output/site_01")
+client.upload_json("/user/danglong/output/site_01/result.json", data)
+```
+
+---
+
 ## 🔧 技术架构图
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    前端 (Vue 3)                       │
-│               http://127.0.0.1:5173                  │
-│         稻田大屏 / 图像识别 / 环境分析 / 决策推演        │
-└────────────────────┬─────────────────────────────────┘
-                     │ /api 代理
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│               后端 API (FastAPI)                      │
-│               http://127.0.0.1:8080                  │
-│   叶害诊断 / 虫害检测 / 监测记录 / 状态查询 / 健康检查   │
-└──────┬────────────────────────────────┬──────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        前端 (Vue 3)                               │
+│                   http://127.0.0.1:5173                          │
+│             稻田大屏 / 图像识别 / 环境分析 / 决策推演                │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │ /api 代理
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   后端 API (FastAPI)                              │
+│                   http://127.0.0.1:8080                          │
+│       叶害诊断 / 虫害检测 / 监测记录 / 状态查询 / 健康检查           │
+└──────┬────────────────────────────────┬──────────────────────────┘
        │                                │
        ▼                                ▼
 ┌──────────────┐              ┌──────────────────┐
@@ -294,6 +395,23 @@ python gradio_app.py
 │ YOLO11x      │              │                  │
 │ (虫害检测)    │              │                  │
 └──────────────┘              └──────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                  AI应用集成 — Dify 工作流管道                       │
+│                                                                  │
+│  Workflow 01 ──▶ Workflow 02 ──▶ Workflow 03 ──▶ Workflow 04    │
+│   (病虫害)        (气象)          (土壤)          (综合分析)       │
+│      │               │               │               │          │
+│      ▼               ▼               ▼               ▼          │
+│  disease.py     weather.py       soil.py         main.py        │
+│                                        │                         │
+│                    ┌───────────────────┼───────────────┐         │
+│                    ▼                   ▼               ▼         │
+│             ┌──────────┐     ┌──────────────┐  ┌──────────┐     │
+│             │   Hive   │     │  rice_yield  │  │   HDFS   │     │
+│             │ 数据仓库  │     │  产量预测模型  │  │ 结果存储  │     │
+│             └──────────┘     └──────────────┘  └──────────┘     │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -310,3 +428,7 @@ python gradio_app.py
 - 叶害分类基于 [PyTorch](https://pytorch.org/) 和 [TorchVision](https://pytorch.org/vision/) 的 ResNet18
 - 前端基于 [Vue 3](https://vuejs.org/) + [Vite](https://vitejs.dev/)
 - 后端基于 [FastAPI](https://fastapi.tiangolo.com/)
+- 工作流编排基于 [Dify](https://dify.ai/) 平台
+- 数据仓库连接基于 [PyHive](https://github.com/dropbox/PyHive) + SQLAlchemy
+- 分布式存储基于 WebHDFS REST API
+- 算法竞赛演示路线图详见 `算法开发/演示路线图.md`
