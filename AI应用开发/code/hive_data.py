@@ -303,6 +303,9 @@ class RiceDataLoader:
         ]
         daily = daily[col_order]
 
+        # ⑥.5 数据合理性清洗（日照负数归零、湿度超过100%截断）
+        daily = self._clean_weather(daily, cols)
+
         for k in ("sunshine", "precip", "avg_wind", "avg_temp", "humidity", "pressure"):
             daily[cols[k]] = daily[cols[k]].round(2)
 
@@ -351,6 +354,9 @@ class RiceDataLoader:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
+        # 数据合理性清洗
+        df = self._clean_disease(df)
+
         return df
 
     def load_soil(self) -> pd.DataFrame:
@@ -367,6 +373,9 @@ class RiceDataLoader:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
+        # 数据合理性清洗
+        df = self._clean_soil(df)
+
         # 日期列转为 datetime，兼容 soil.py 中的时间比较
         if "date" in df.columns:
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
@@ -378,11 +387,125 @@ class RiceDataLoader:
 
         Hive 列名（如 point、2025firstcrop_pred）本就是小写，与 rice_yield.py 期望一致，无需 rename。
         """
-        return self._read_table(self.table_yield)
+        df = self._read_table(self.table_yield)
+        return self._clean_yield(df)
 
     # ============================================================
     # 八、内部聚合工具（私有静态方法）
     # ============================================================
+    @staticmethod
+    def _clean_weather(df: pd.DataFrame, cols: dict[str, str]) -> pd.DataFrame:
+        """日聚合后的数据合理性清洗。
+
+        清洗规则（可继续扩充）：
+        ─────────────────────────────
+        • 日照时长 (sunshine) < 0 → 归零（传感器异常负值）
+        • 相对湿度 (humidity) > 100 → 截断为 100（传感器漂移 / 结露）
+        • 降水 (precip) < 0 → 归零
+        • 气压 (pressure) < 0 → 归零（极少见，但兜底）
+        """
+        _df = df.copy()
+
+        # 日照时长：负数归零
+        sunshine_col = cols.get("sunshine", "sunshineduration")
+        if sunshine_col in _df.columns:
+            _df.loc[_df[sunshine_col] < 0, sunshine_col] = 0.0
+
+        # 相对湿度：超过 100% 截断为 100
+        humidity_col = cols.get("humidity", "dailyrelativehumidity")
+        if humidity_col in _df.columns:
+            _df.loc[_df[humidity_col] > 100, humidity_col] = 100.0
+            # 同时处理可能的负湿度
+            _df.loc[_df[humidity_col] < 0, humidity_col] = 0.0
+
+        # 降水量：负数归零
+        precip_col = cols.get("precip", "dailyprecipitation")
+        if precip_col in _df.columns:
+            _df.loc[_df[precip_col] < 0, precip_col] = 0.0
+
+        # 气压：负数归零
+        pressure_col = cols.get("pressure", "dailyaveragepressure")
+        if pressure_col in _df.columns:
+            _df.loc[_df[pressure_col] < 0, pressure_col] = 0.0
+
+        return _df
+
+    @staticmethod
+    def _clean_disease(df: pd.DataFrame) -> pd.DataFrame:
+        """病虫害监测数据合理性清洗。
+
+        清洗规则：
+        ─────────────────────────────
+        • 叶害覆盖率 (BacterialLeafBlightRate / BrownSpotRate / TungroVirusRate)
+          < 0 → 归零，> 100 → 截断为 100
+        • 虫害数量 (PestRphNum / PestScsNum / PestCmNum) < 0 → 归零
+        """
+        _df = df.copy()
+
+        # 覆盖率类：夹逼到 [0, 100]
+        rate_cols = ["BacterialLeafBlightRate", "BrownSpotRate", "TungroVirusRate"]
+        for col in rate_cols:
+            if col in _df.columns:
+                _df.loc[_df[col] < 0, col] = 0.0
+                _df.loc[_df[col] > 100, col] = 100.0
+
+        # 虫害数量类：负数归零
+        pest_cols = ["PestRphNum", "PestScsNum", "PestCmNum"]
+        for col in pest_cols:
+            if col in _df.columns:
+                _df.loc[_df[col] < 0, col] = 0
+
+        return _df
+
+    @staticmethod
+    def _clean_soil(df: pd.DataFrame) -> pd.DataFrame:
+        """土壤理化指标数据合理性清洗。
+
+        清洗规则：
+        ─────────────────────────────
+        • 有机质 (Soil_OM_percent) < 0 → 归零，> 100 → 截断为 100
+        • pH (Soil_pH) < 0 → 归零，> 14 → 截断为 14
+        • 磷/钾 (Soil_P_ppm / Soil_K_ppm) < 0 → 归零
+        • 电导率 (Soil_EC_dS_m) < 0 → 归零
+        """
+        _df = df.copy()
+
+        # 有机质：夹逼到 [0, 100]
+        if "Soil_OM_percent" in _df.columns:
+            _df.loc[_df["Soil_OM_percent"] < 0, "Soil_OM_percent"] = 0.0
+            _df.loc[_df["Soil_OM_percent"] > 100, "Soil_OM_percent"] = 100.0
+
+        # pH：夹逼到 [0, 14]
+        if "Soil_pH" in _df.columns:
+            _df.loc[_df["Soil_pH"] < 0, "Soil_pH"] = 0.0
+            _df.loc[_df["Soil_pH"] > 14, "Soil_pH"] = 14.0
+
+        # 磷/钾/电导率：负数归零
+        nonneg_cols = ["Soil_P_ppm", "Soil_K_ppm", "Soil_EC_dS_m"]
+        for col in nonneg_cols:
+            if col in _df.columns:
+                _df.loc[_df[col] < 0, col] = 0.0
+
+        return _df
+
+    @staticmethod
+    def _clean_yield(df: pd.DataFrame) -> pd.DataFrame:
+        """产量基线数据合理性清洗。
+
+        清洗规则：
+        ─────────────────────────────
+        • 所有数值列（产量预测值等）< 0 → 归零
+        • 排除 point / date 等非数值标识列
+        """
+        _df = df.copy()
+
+        # 对所有数值列做非负归零（跳过 point 等字符串列）
+        num_cols = _df.select_dtypes(include=["number"]).columns
+        for col in num_cols:
+            _df.loc[_df[col] < 0, col] = 0.0
+
+        return _df
+
     @staticmethod
     def _weighted_avg_agg(df: pd.DataFrame, col: str,
                           group_keys: list[str]) -> pd.Series:
