@@ -1,3 +1,48 @@
+const HDFS_BASE = 'http://192.168.157.130:8000'
+
+function fixUnquotedUnits(jsonStr) {
+  // Dify LLM 有时输出 "预计减产": 35公斤/亩 而非 "35公斤/亩"，修复为合法 JSON
+  return jsonStr.replace(
+    /:\s*(\d+\.?\d*)([^\d\s,}\]"'][^\s,}\]]*)/g,
+    (_, num, unit) => `: "${num}${unit}"`
+  )
+}
+
+function parseJsonLike(value) {
+  if (typeof value !== 'string') return value
+  const s = value.trim()
+
+  // 0) 预处理：修复 LLM 输出的未加引号的值（如 35公斤/亩 → "35公斤/亩"）
+  const tryParse = (str) => {
+    try { return JSON.parse(str) } catch (_) {
+      try { return JSON.parse(fixUnquotedUnits(str)) } catch (_) { return null }
+    }
+  }
+
+  // 1) plain JSON
+  if (s.startsWith('{') || s.startsWith('[')) {
+    const r = tryParse(s)
+    if (r) return r
+  }
+
+  // 2) markdown code fence: ```json ... ``` or ``` ... ```
+  const fence = s.match(/```(?:json|JSON)?\s*([\s\S]*?)\s*```/)
+  if (fence) {
+    const r = tryParse(fence[1])
+    if (r) return r
+  }
+
+  // 3) extract from first { to last }
+  const objStart = s.indexOf('{')
+  const objEnd = s.lastIndexOf('}')
+  if (objStart !== -1 && objEnd > objStart) {
+    const r = tryParse(s.slice(objStart, objEnd + 1))
+    if (r) return r
+  }
+
+  return value
+}
+
 async function requestDiagnosis(endpoint, file, stationCode) {
   const formData = new FormData()
   formData.append('file', file)
@@ -57,4 +102,27 @@ export async function fetchMonitoringState(date) {
     throw new Error(message)
   }
   return payload
+}
+
+export async function fetchHdfsPointData(date, point) {
+  const response = await fetch(`${HDFS_BASE}/api/${encodeURIComponent(date)}/${encodeURIComponent(point)}/all.json`)
+  if (!response.ok) {
+    throw new Error(`HDFS数据读取失败: ${response.status}`)
+  }
+  const raw = await response.json()
+
+  // Parse nested JSON strings inside main_output (output1/output2/output3 are strings)
+  if (raw.main_output && typeof raw.main_output === 'object') {
+    const mo = raw.main_output
+    if (typeof mo.output1 === 'string') {
+      mo.output1 = parseJsonLike(mo.output1)
+    }
+    if (typeof mo.output2 === 'string') {
+      mo.output2 = parseJsonLike(mo.output2)
+    }
+    if (typeof mo.output3 === 'string') {
+      mo.output3 = parseJsonLike(mo.output3)
+    }
+  }
+  return raw
 }

@@ -8,7 +8,11 @@ import pandas as pd
 import json
 import re
 import requests
+from pathlib import Path
 from typing import NamedTuple
+
+SCRIPT_DIR = Path(__file__).resolve().parent  # AI应用开发/code/
+API_DIR = SCRIPT_DIR.parent / "api"           # AI应用开发/api/
 
 
 class PipelineResources(NamedTuple):
@@ -65,18 +69,36 @@ def parse_json_like(value):
     - 前后带说明文字、包含 JSON 片段的混合文本
     - 带 BOM / 首尾空白字符
     """
+    import re as _re
+
     if not isinstance(value, str):
         return value
+
+    def _try_parse(s: str):
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            pass
+        # 修复 LLM 输出的未加引号的值：35公斤/亩 → "35公斤/亩"
+        try:
+            fixed = _re.sub(
+                r':\s*(\d+\.?\d*)([^\d\s,}\]"\']+[^\s,}\]]*)',
+                r': "\1\2"',
+                s,
+            )
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        return None
 
     for candidate in _extract_json_candidates(value):
         if not candidate:
             continue
         if not (candidate.startswith("{") or candidate.startswith("[")):
             continue
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
+        result = _try_parse(candidate)
+        if result is not None:
+            return result
     return value
 
 
@@ -110,10 +132,10 @@ def load_resources(
             f"user={hive_user}, database={hive_database}"
         )
 
-    weather_api_url, weather_api_key = load_dify_workflow_run_config("api/workflow_api_02.json")
-    soil_api_url, soil_api_key = load_dify_workflow_run_config("api/workflow_api_03.json")
-    disease_api_url, disease_api_key = load_dify_workflow_run_config("api/workflow_api_01.json")
-    final_api_url, final_api_key = load_dify_workflow_run_config("api/workflow_api_04.json")
+    weather_api_url, weather_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_02.json"))
+    soil_api_url, soil_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_03.json"))
+    disease_api_url, disease_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_01.json"))
+    final_api_url, final_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_04.json"))
     return PipelineResources(
         management_df=hive.load_disease(),       # 从 Hive 读取病虫害数据
         weather_df=hive.load_weather(),          # 从 Hive 读取气象数据
@@ -180,7 +202,7 @@ def run_final_workflow(
     api_url: str,
     api_key: str,
     session: requests.Session,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     # 构造Dify请求信息
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -205,7 +227,8 @@ def run_final_workflow(
     workflow_outputs = response_data['data']['outputs']  # 提取输出结果
     main_output1 = workflow_outputs['output1']
     main_output2 = workflow_outputs["output2"]
-    return main_output1, main_output2
+    main_output3 = workflow_outputs["output3"]
+    return main_output1, main_output2, main_output3
 
 if __name__ == "__main__":
     TARGET_DATE = "2025-05-08" # 目标日期   
@@ -224,13 +247,13 @@ if __name__ == "__main__":
         hive_database=HIVE_DATABASE,
         hive_port=HIVE_PORT
     )
-    print("[info] hive连接成功，数据资源加载完成")
+    print("[conn] hive连接成功，数据资源加载完成")
     hdfs_client = hdfs(namenode_host=HDFS_HOST, namenode_port=HDFS_PORT, user=HDFS_USER)
     
     with requests.Session() as session:
         hdfs_client.mkdirs(HDFS_PATH)
         for station_num in range(1, 31):
-            print(f"=========================开始处理站点{station_num}=========================")
+            print(f"[start]开始处理站点{station_num}")
             input1, input2, input3, input4 = build_inputs(
                 target_date=TARGET_DATE,
                 station_num=station_num,
@@ -241,28 +264,8 @@ if __name__ == "__main__":
             weather_output = parse_json_like(input2[0])
             soil_output = parse_json_like(input3[0])
             yield_output = {"yield_output": input4}
-            hdfs_client.upload_json(
-                disease_output,
-                f"{HDFS_PATH}/point_{station_num}/disease_output.json",
-            )
-            print("[info] 保存疾病输出到hdfs成功")
-            hdfs_client.upload_json(
-                weather_output,
-                f"{HDFS_PATH}/point_{station_num}/weather_output.json",
-            )
-            print("[info] 保存气象输出到hdfs成功")
-            hdfs_client.upload_json(
-                soil_output,
-                f"{HDFS_PATH}/point_{station_num}/soil_output.json",
-            )
-            print("[info] 保存土壤输出到hdfs成功")
-            hdfs_client.upload_json(
-                yield_output,
-                f"{HDFS_PATH}/point_{station_num}/yield_output.json",
-            )
-            print("[info] 保存产量输出到hdfs成功")
-            print(f"=========================开始推演决策=========================")
-            output1, output2 = run_final_workflow(
+            print(f"[info] 开始推演决策")
+            output1, output2, output3 = run_final_workflow(
                 input1[1],
                 input2[1],
                 input3[1],
@@ -271,14 +274,22 @@ if __name__ == "__main__":
                 api_key=resources.final_workflow_api_key,
                 session=session,
             )
-            print(f"=========================推演决策完成,正在将结果保存到hdfs=========================")
+            print(f"[info] 推演决策完成,正在将结果保存到hdfs")
             main_output = {
                 "output1": parse_json_like(output1),
-                "output2": parse_json_like(output2)
+                "output2": parse_json_like(output2),
+                "output3": parse_json_like(output3)
+            }
+            all_output = {
+                "disease_output": disease_output,
+                "weather_output": weather_output,
+                "soil_output": soil_output,
+                "yield_output": yield_output,
+                "main_output": main_output,
             }
             hdfs_client.upload_json(
-                main_output,
-                f"{HDFS_PATH}/point_{station_num}/main_output.json",
+                all_output,
+                f"{HDFS_PATH}/point_{station_num}/all.json",
             )
-            print(f"[info] 保存推演决策结果到hdfs成功")
-            print(f"=========================站点{station_num}处理完成=========================")
+            print(f"[info] 保存结果到hdfs成功")
+            print(f"[done] 站点{station_num}处理完成")

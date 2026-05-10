@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import riceFieldBg from './assets/rice.png'
 import HistoryCharts from './components/HistoryCharts.vue'
-import { fetchMonitoringState, identifyLeafDamage, identifyPestDamage, saveMonitoringRecord } from './api/agriDiagnosis'
+import { fetchMonitoringState, fetchHdfsPointData, identifyLeafDamage, identifyPestDamage, saveMonitoringRecord } from './api/agriDiagnosis'
 
 const stationPoints = ref([
   { x: 21, y: 16 }, { x: 32, y: 18 }, { x: 41, y: 16 },
@@ -83,6 +83,12 @@ const pestAnnotatedUrl = ref('')
 const leafError = ref('')
 const pestError = ref('')
 const pestTypeLabels = ['二化螟', '稻纵卷叶螟', '褐飞虱']
+const hdfsData = ref(null)
+const hdfsAttempted = ref(false)
+const hdfsLoading = ref(false)
+let hdfsRequestId = 0
+const activeSuggestionType = ref('')
+const expandedPlanPhases = ref([])
 const INSPECT_DEFAULT_ITEMS = [
   { key: 'leaf_blight', name: '细菌性叶枯病', level: 'normal' },
   { key: 'leaf_brown_spot', name: '褐斑病', level: 'normal' },
@@ -241,6 +247,355 @@ function getStageYieldFactor(stage) {
   return 0.95
 }
 
+// ── HDFS 数据辅助函数 ──
+
+function stationCodeToHdfsPoint(code) {
+  const num = parseInt(code.replace(/\D/g, ''), 10)
+  return `point_${num}`
+}
+
+function severityToLevel(severity) {
+  if (!severity) return 'normal'
+  const s = String(severity)
+  if (s.includes('严重') || s.includes('重度')) return 'danger'
+  if (s.includes('中等') || s.includes('中度')) return 'warn'
+  return 'normal'
+}
+
+function truncateText(text, maxLen) {
+  if (!text || typeof text !== 'string') return ''
+  return text.length > maxLen ? text.slice(0, maxLen) + '…' : text
+}
+
+function mapHdfsInspectItems(diseaseOutput) {
+  const items = diseaseOutput?.病害情况
+  if (!items || typeof items !== 'object') return null
+
+  const mapping = [
+    { hdfsName: '白叶枯病', name: '细菌性叶枯病', field: '覆盖率', unit: '%', key: 'leaf_blight' },
+    { hdfsName: '褐斑病', name: '褐斑病', field: '覆盖率', unit: '%', key: 'leaf_brown_spot' },
+    { hdfsName: '东格鲁病毒病', name: '东格鲁病毒病', field: '覆盖率', unit: '%', key: 'leaf_tungro' },
+    { hdfsName: '稻飞虱', name: '稻飞虱', field: '数量', unit: '头', key: 'pest_planthopper' },
+    { hdfsName: '二化螟', name: '二化螟', field: '数量', unit: '头', key: 'pest_borer' },
+    { hdfsName: '稻纵卷叶螟', name: '稻纵卷叶螟', field: '数量', unit: '头', key: 'pest_leafroller' },
+  ]
+
+  return mapping.map((m) => {
+    const info = items[m.hdfsName]
+    if (!info || typeof info !== 'object') {
+      return { label: m.name, value: '无数据', level: 'normal', key: m.key }
+    }
+    const val = info[m.field] ?? ''
+    const severity = info['严重程度'] ?? ''
+    return {
+      label: m.name,
+      value: `${m.field} ${val}${m.unit}，${severity}`,
+      level: severityToLevel(severity),
+      key: m.key,
+    }
+  })
+}
+
+function mapHdfsAnalysisItems(weatherOutput, soilOutput) {
+  const result = []
+  const wx = weatherOutput?.气象信息分析与水稻种植影响评估?.当日气象分析
+  if (wx && typeof wx === 'object') {
+    if (wx['温度条件']) result.push({ label: '温度条件', value: truncateText(wx['温度条件'], 80) })
+    if (wx['湿度条件']) result.push({ label: '湿度条件', value: truncateText(wx['湿度条件'], 80) })
+    if (wx['降水条件']) result.push({ label: '降水条件', value: truncateText(wx['降水条件'], 80) })
+    if (wx['风速条件']) result.push({ label: '风速条件', value: truncateText(wx['风速条件'], 80) })
+  }
+  const sl = soilOutput?.土壤信息分析与水稻种植影响评估?.当前土壤分析
+  if (sl && typeof sl === 'object') {
+    if (sl['pH值状况']) result.push({ label: '土壤pH', value: truncateText(sl['pH值状况'], 80) })
+    if (sl['养分状况']) result.push({ label: '土壤养分', value: truncateText(sl['养分状况'], 80) })
+    if (sl['有机质含量']) result.push({ label: '有机质含量', value: truncateText(sl['有机质含量'], 80) })
+    if (sl['土壤电导率']) result.push({ label: '土壤电导率', value: truncateText(sl['土壤电导率'], 80) })
+  }
+  return result.length > 0 ? result : null
+}
+
+function mapHdfsDecisionItems(output1) {
+  const yi = output1?.产量影响分析
+  if (!yi || typeof yi !== 'object') return null
+
+  const result = []
+  if (yi['当前农田预测产量']) {
+    result.push({ label: '预计产量', value: yi['当前农田预测产量'] })
+  }
+  if (yi['预计减产']) {
+    result.push({ label: '预计减产', value: yi['预计减产'] })
+  }
+  const factors = yi['各因素产量影响']
+  if (factors && typeof factors === 'object') {
+    if (factors['叶害影响']) result.push({ label: '叶害影响', value: truncateText(factors['叶害影响'], 80) })
+    if (factors['虫害影响']) result.push({ label: '虫害影响', value: truncateText(factors['虫害影响'], 80) })
+    if (factors['气象影响']) result.push({ label: '气象影响', value: truncateText(factors['气象影响'], 80) })
+    if (factors['土壤影响']) result.push({ label: '土壤影响', value: truncateText(factors['土壤影响'], 80) })
+  }
+  return result.length > 0 ? result : null
+}
+
+function mapHdfsPlanPhases(planObj) {
+  if (!planObj || typeof planObj !== 'object') return null
+
+  const phases = []
+  const phaseData = planObj['分阶段防控/预防措施']
+  if (phaseData && typeof phaseData === 'object') {
+    for (const [phaseName, phaseInfo] of Object.entries(phaseData)) {
+      if (!phaseInfo || typeof phaseInfo !== 'object') continue
+      const target = String(phaseInfo['阶段目标'] ?? '')
+      const leafOps = {}
+      const pestOps = {}
+
+      // Collect leaf disease operations
+      const leafSection = phaseInfo['叶害防控/预防'] || phaseInfo['叶害防控']
+      if (leafSection && typeof leafSection === 'object') {
+        for (const [pestName, ops] of Object.entries(leafSection)) {
+          if (ops && typeof ops === 'object' && pestName !== '阶段目标') {
+            leafOps[pestName] = ops
+          }
+        }
+      }
+
+      // Collect pest operations
+      const pestSection = phaseInfo['虫害防控/预防'] || phaseInfo['虫害防控']
+      if (pestSection && typeof pestSection === 'object') {
+        for (const [pestName, ops] of Object.entries(pestSection)) {
+          if (ops && typeof ops === 'object' && pestName !== '阶段目标') {
+            pestOps[pestName] = ops
+          }
+        }
+      }
+
+      // For 方案B: try alternative key names
+      if (Object.keys(leafOps).length === 0) {
+        for (const [key, val] of Object.entries(phaseInfo)) {
+          if (key.startsWith('叶害') && val && typeof val === 'object') {
+            for (const [pestName, ops] of Object.entries(val)) {
+              if (ops && typeof ops === 'object') leafOps[pestName] = ops
+            }
+          }
+        }
+      }
+      if (Object.keys(pestOps).length === 0) {
+        for (const [key, val] of Object.entries(phaseInfo)) {
+          if (key.startsWith('虫害') && val && typeof val === 'object') {
+            for (const [pestName, ops] of Object.entries(val)) {
+              if (ops && typeof ops === 'object') pestOps[pestName] = ops
+            }
+          }
+        }
+      }
+
+      phases.push({
+        title: phaseName,
+        target,
+        leafOps: Object.keys(leafOps).length > 0 ? leafOps : null,
+        pestOps: Object.keys(pestOps).length > 0 ? pestOps : null,
+      })
+    }
+  }
+
+  const notes = planObj['通用注意事项']
+  return { phases, notes: notes && typeof notes === 'object' ? notes : null }
+}
+
+function formatOpsText(ops) {
+  if (!ops || typeof ops !== 'object') return ''
+  return Object.entries(ops)
+    .filter(([, v]) => typeof v === 'string' && v && v !== '无操作')
+    .map(([k, v]) => `${k}：${v}`)
+    .join('\n')
+}
+
+function findPlanInOutput(outputData, planPrefix) {
+  if (!outputData || typeof outputData !== 'object') return null
+  for (const key of Object.keys(outputData)) {
+    if (key.startsWith(planPrefix)) return outputData[key]
+  }
+  return null
+}
+
+async function loadHdfsData() {
+  const code = activeStation.value?.code
+  const dateKey = selectedDateKey.value
+  const reqId = ++hdfsRequestId
+  hdfsData.value = null
+  hdfsLoading.value = true
+  expandedPlanPhases.value = []
+  if (!code || !dateKey) {
+    hdfsLoading.value = false
+    return
+  }
+
+  try {
+    const point = stationCodeToHdfsPoint(code)
+    const result = await fetchHdfsPointData(dateKey, point)
+    if (reqId !== hdfsRequestId) return  // 过期请求，丢弃
+    hdfsData.value = result
+  } catch (e) {
+    if (reqId !== hdfsRequestId) return
+    console.warn('HDFS数据加载失败:', e.message)
+    hdfsData.value = null
+  } finally {
+    if (reqId === hdfsRequestId) {
+      hdfsAttempted.value = true
+      hdfsLoading.value = false
+    }
+  }
+}
+
+function parseYieldNumber(text) {
+  if (!text) return null
+  const match = String(text).match(/([\d.]+)/)
+  return match ? parseFloat(match[1]) : null
+}
+
+function openSuggestionDialog(type) {
+  activeSuggestionType.value = type
+}
+
+function closeSuggestionDialog() {
+  activeSuggestionType.value = ''
+}
+
+function togglePlanPhase(idx) {
+  const pos = expandedPlanPhases.value.indexOf(idx)
+  if (pos === -1) {
+    expandedPlanPhases.value.push(idx)
+  } else {
+    expandedPlanPhases.value.splice(pos, 1)
+  }
+}
+
+const hdfsExpectedYield = computed(() => {
+  return parseYieldNumber(hdfsData.value?.main_output?.output1?.产量影响分析?.['当前农田预测产量'])
+})
+
+const hdfsRecoveryYield = computed(() => {
+  const planA = findPlanInOutput(hdfsData.value?.main_output?.output2, '方案A')
+  return parseYieldNumber(planA?.['方案核心参数']?.['预计恢复产量'])
+})
+
+const suggestionTitle = computed(() => {
+  if (activeSuggestionType.value === 'inspect') return '病虫害防治建议'
+  if (activeSuggestionType.value === 'analysis') return '环境与土壤管理建议'
+  if (activeSuggestionType.value === 'decision') return '综合分析报告'
+  return ''
+})
+
+function buildSuggestionHtml(type) {
+  if (!hdfsData.value) return '<p class="suggestion-empty">暂无HDFS数据</p>'
+
+  if (type === 'inspect') {
+    const s = hdfsData.value?.disease_output
+    if (!s) return '<p class="suggestion-empty">暂无病虫害数据</p>'
+    let html = ''
+    if (s['监测总结']) html += `<p class="suggestion-summary"><b>监测总结：</b>${s['监测总结']}</p>`
+    const advice = s['综合防治建议']
+    if (advice) {
+      const leaf = advice['叶害防治策略']
+      if (leaf && typeof leaf === 'object') {
+        html += '<h4>叶害防治策略</h4>'
+        for (const [key, val] of Object.entries(leaf)) {
+          if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+        }
+      }
+      const pest = advice['虫害防治策略']
+      if (pest && typeof pest === 'object') {
+        html += '<h4>虫害防治策略</h4>'
+        for (const [key, val] of Object.entries(pest)) {
+          if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+        }
+      }
+      const general = advice['综合管理建议']
+      if (general && typeof general === 'object') {
+        html += '<h4>综合管理建议</h4>'
+        for (const [key, val] of Object.entries(general)) {
+          if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+        }
+      }
+    }
+    return html || '<p class="suggestion-empty">暂无防治建议数据</p>'
+  }
+
+  if (type === 'analysis') {
+    const wx = hdfsData.value?.weather_output
+    const sl = hdfsData.value?.soil_output
+    let html = ''
+
+    if (wx?.气象信息分析与水稻种植影响评估) {
+      const wxData = wx.气象信息分析与水稻种植影响评估
+      if (wxData['综合评价']) html += `<p class="suggestion-summary"><b>气象综合评价：</b>${wxData['综合评价']}</p>`
+    }
+    if (wx?.农田措施) {
+      html += '<h4>农田措施建议</h4>'
+      for (const [key, val] of Object.entries(wx.农田措施)) {
+        if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+      }
+    }
+    if (wx?.总结建议) {
+      html += '<h4>气象总结建议</h4>'
+      for (const [key, val] of Object.entries(wx.总结建议)) {
+        if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+      }
+    }
+    if (sl?.土壤管理与农田措施) {
+      html += '<h4>土壤管理措施</h4>'
+      for (const [key, val] of Object.entries(sl.土壤管理与农田措施)) {
+        if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+      }
+    }
+    if (sl?.总结建议) {
+      html += '<h4>土壤总结建议</h4>'
+      for (const [key, val] of Object.entries(sl.总结建议)) {
+        if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+      }
+    }
+    return html || '<p class="suggestion-empty">暂无环境与土壤建议数据</p>'
+  }
+
+  if (type === 'decision') {
+    const o1 = hdfsData.value?.main_output?.output1
+    if (!o1 || typeof o1 !== 'object') return '<p class="suggestion-empty">暂无综合分析数据</p>'
+    let html = ''
+    const leaf = o1['叶害影响分析']
+    if (leaf && typeof leaf === 'object') {
+      html += '<h4>叶害影响分析</h4>'
+      for (const [pestName, analysis] of Object.entries(leaf)) {
+        if (analysis && typeof analysis === 'object') {
+          html += `<h5>${pestName}</h5>`
+          for (const [key, val] of Object.entries(analysis)) {
+            if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+          }
+        }
+      }
+    }
+    const pest = o1['虫害影响分析']
+    if (pest && typeof pest === 'object') {
+      html += '<h4>虫害影响分析</h4>'
+      for (const [pestName, analysis] of Object.entries(pest)) {
+        if (analysis && typeof analysis === 'object') {
+          html += `<h5>${pestName}</h5>`
+          for (const [key, val] of Object.entries(analysis)) {
+            if (typeof val === 'string') html += `<p><b>${key}：</b>${val}</p>`
+          }
+        }
+      }
+    }
+    const yi = o1['产量影响分析']
+    if (yi?.['总体影响']) html += `<p class="suggestion-summary"><b>总体影响：</b>${yi['总体影响']}</p>`
+    return html || '<p class="suggestion-empty">暂无综合分析数据</p>'
+  }
+
+  return '<p class="suggestion-empty">暂无数据</p>'
+}
+
+const suggestionContent = computed(() => {
+  return buildSuggestionHtml(activeSuggestionType.value)
+})
+
 const activeStation = computed(() => {
   const base = stationData.value.find((station) => station.id === activeStationId.value) ?? stationData.value[0]
   const middleDay = Math.ceil(daysInCurrentMonth.value / 2)
@@ -329,9 +684,15 @@ const activeDecisionMetrics = computed(() => {
   const improvedProtectionFactor = 1 - improvedTotalStress
   const recoveryYield = potentialYield * envFactor * stageFactor * improvedProtectionFactor
 
-  const expectedRounded = Number(clamp(expectedYield, 220, 680).toFixed(2))
-  const recoveryRounded = Number(clamp(recoveryYield, expectedRounded, 700).toFixed(2))
-  const recoveryProgress = Number(clamp((recoveryRounded / Math.max(potentialYield, 1)) * 100, 20, 98).toFixed(0))
+  const expectedRounded = hdfsExpectedYield.value != null
+    ? hdfsExpectedYield.value
+    : null
+  const recoveryRounded = hdfsRecoveryYield.value != null
+    ? hdfsRecoveryYield.value
+    : null
+  const recoveryProgress = recoveryRounded != null
+    ? Number(clamp((recoveryRounded / Math.max(expectedRounded ?? potentialYield, 1)) * 100, 20, 98).toFixed(0))
+    : 0
 
   return {
     growthPeriod,
@@ -357,23 +718,58 @@ function closePlanDialog() {
   activePlanDialog.value = ''
 }
 
-const planDialogTitle = computed(() => (activePlanDialog.value === 'A' ? '方案A：虫害压制方案' : '方案B：病害抑制方案'))
-
-const planDialogSteps = computed(() => {
-  if (activePlanDialog.value === 'A') {
-    return [
-      '24小时内完成虫口密度复核，重点排查稻飞虱与二化螟高发区。',
-      '优先对高风险田块实施定点喷施，并保留10%的空白对照区进行效果评估。',
-      '48小时后复测害虫数量，若下降低于30%，切换联合防控（生物+化学）。',
-      '同步清理田埂杂草与积水，降低虫卵孳生环境。'
-    ]
+function getPlanHdfsName(planType) {
+  if (planType === 'A') {
+    const keys = hdfsData.value?.main_output?.output2 ? Object.keys(hdfsData.value.main_output.output2) : []
+    const fullKey = keys.find(k => k.startsWith('方案A'))
+    if (fullKey) return fullKey
   }
-  return [
-    '先完成病斑分布抽样，标注细菌性叶枯病与东格鲁高风险区块。',
-    '分区施用抑菌剂并补充叶面营养，控制病斑扩展速度。',
-    '加强水肥管理，避免连续高湿；必要时进行排水降湿。',
-    '72小时后复拍并复判，若发病率仍上升，执行加强轮次防治。'
-  ]
+  const keys = hdfsData.value?.main_output?.output3 ? Object.keys(hdfsData.value.main_output.output3) : []
+  const fullKey = keys.find(k => k.startsWith('方案B'))
+  if (fullKey) return fullKey
+  return null
+}
+
+const planDialogTitle = computed(() => {
+  const hdfsName = getPlanHdfsName(activePlanDialog.value)
+  if (hdfsName) return hdfsName
+  return activePlanDialog.value === 'A' ? '方案A：虫害压制方案' : '方案B：病害抑制方案'
+})
+
+const planDialogPhases = computed(() => {
+  const outputKey = activePlanDialog.value === 'A' ? 'output2' : 'output3'
+  const planPrefix = activePlanDialog.value === 'A' ? '方案A' : '方案B'
+  const planObj = findPlanInOutput(hdfsData.value?.main_output?.[outputKey], planPrefix)
+  return mapHdfsPlanPhases(planObj)
+})
+
+const planDialogNotes = computed(() => {
+  const outputKey = activePlanDialog.value === 'A' ? 'output2' : 'output3'
+  const planPrefix = activePlanDialog.value === 'A' ? '方案A' : '方案B'
+  const planObj = findPlanInOutput(hdfsData.value?.main_output?.[outputKey], planPrefix)
+  return planObj?.['通用注意事项'] || null
+})
+
+const planDialogFallback = computed(() => {
+  if (hdfsAttempted.value && !planDialogPhases.value) {
+    return ['暂无HDFS数据，请确认该日期和站点的数据已上传。']
+  }
+  if (!planDialogPhases.value) {
+    return activePlanDialog.value === 'A'
+      ? [
+          '24小时内完成虫口密度复核，重点排查稻飞虱与二化螟高发区。',
+          '优先对高风险田块实施定点喷施，并保留10%的空白对照区进行效果评估。',
+          '48小时后复测害虫数量，若下降低于30%，切换联合防控（生物+化学）。',
+          '同步清理田埂杂草与积水，降低虫卵孳生环境。'
+        ]
+      : [
+          '先完成病斑分布抽样，标注细菌性叶枯病与东格鲁高风险区块。',
+          '分区施用抑菌剂并补充叶面营养，控制病斑扩展速度。',
+          '加强水肥管理，避免连续高湿；必要时进行排水降湿。',
+          '72小时后复拍并复判，若发病率仍上升，执行加强轮次防治。'
+        ]
+  }
+  return null
 })
 
 const detailPopupTitle = computed(() => {
@@ -384,28 +780,50 @@ const detailPopupTitle = computed(() => {
 })
 
 const detailPopupRows = computed(() => {
+  if (hdfsLoading.value) {
+    const loadingLabels = {
+      inspect: ['细菌性叶枯病', '褐斑病', '东格鲁病毒病', '稻飞虱', '二化螟', '稻纵卷叶螟'],
+      analysis: ['温度条件', '湿度条件', '降水条件', '风速条件', '土壤pH', '土壤养分', '有机质含量', '土壤电导率'],
+      decision: ['预计产量', '预计减产', '叶害影响', '虫害影响', '气象影响', '土壤影响'],
+    }[activeDetailPopup.value] || []
+    return loadingLabels.map((label) => ({ label, value: '', level: 'normal', loading: true }))
+  }
   if (activeDetailPopup.value === 'inspect') {
-    return inspectItems.value.map((item) => ({
-      label: item.name,
-      value: item.level === 'danger' ? '严重' : item.level === 'warn' ? '预警' : '正常',
-      level: item.level
-    }))
+    const hdfsItems = mapHdfsInspectItems(hdfsData.value?.disease_output)
+    if (hdfsItems) return hdfsItems
+    return [
+      { label: '细菌性叶枯病', value: '--', level: 'normal' },
+      { label: '褐斑病', value: '--', level: 'normal' },
+      { label: '东格鲁病毒病', value: '--', level: 'normal' },
+      { label: '稻飞虱', value: '--', level: 'normal' },
+      { label: '二化螟', value: '--', level: 'normal' },
+      { label: '稻纵卷叶螟', value: '--', level: 'normal' },
+    ]
   }
   if (activeDetailPopup.value === 'analysis') {
+    const hdfsItems = mapHdfsAnalysisItems(hdfsData.value?.weather_output, hdfsData.value?.soil_output)
+    if (hdfsItems) return hdfsItems
     return [
-      { label: '空气温度', value: `${activeStation.value.avgAirTemp} ℃` },
-      { label: '相对湿度', value: `${activeStation.value.relativeHumidity} %` },
-      { label: '土壤水分', value: `${activeStation.value.moisture} %` },
-      { label: '土壤酸碱度', value: `${activeStation.value.soilAcidity} pH` },
-      { label: '土壤电导率', value: `${activeStation.value.soilConductivity} dS/m` }
+      { label: '温度条件', value: '--' },
+      { label: '湿度条件', value: '--' },
+      { label: '降水条件', value: '--' },
+      { label: '风速条件', value: '--' },
+      { label: '土壤pH', value: '--' },
+      { label: '土壤养分', value: '--' },
+      { label: '有机质含量', value: '--' },
+      { label: '土壤电导率', value: '--' },
     ]
   }
   if (activeDetailPopup.value === 'decision') {
+    const hdfsItems = mapHdfsDecisionItems(hdfsData.value?.main_output?.output1)
+    if (hdfsItems) return hdfsItems
     return [
-      { label: '预计产量', value: `${activeDecisionMetrics.value.expectedYield.toFixed(2)} 公斤/亩` },
-      { label: '恢复产量', value: `${activeDecisionMetrics.value.recoveryYield.toFixed(2)} 公斤/亩` },
-      { label: '生长阶段', value: activeDecisionMetrics.value.growthPeriod },
-      { label: '建议方案', value: stationRiskLevelMap.value[activeStation.value.code] === 'danger' ? '优先方案B' : '优先方案A' }
+      { label: '预计产量', value: '--' },
+      { label: '预计减产', value: '--' },
+      { label: '叶害影响', value: '--' },
+      { label: '虫害影响', value: '--' },
+      { label: '气象影响', value: '--' },
+      { label: '土壤影响', value: '--' },
     ]
   }
   return []
@@ -793,6 +1211,7 @@ onMounted(() => {
   loadSelectedDateFromStorage()
   loadInspectMapFromStorage()
   loadInspectMapFromServer()
+  loadHdfsData()
   beijingTimer = window.setInterval(() => {
     beijingNow.value = getBeijingDateParts()
   }, 1000)
@@ -800,6 +1219,10 @@ onMounted(() => {
 
 watch(selectedDateKey, (dateKey) => {
   loadInspectMapFromServer(dateKey)
+})
+
+watch([selectedDateKey, () => activeStation.value?.code], () => {
+  loadHdfsData()
 })
 
 onBeforeUnmount(() => {
@@ -900,9 +1323,15 @@ onBeforeUnmount(() => {
                 class="map-detail-row"
               >
                 <span>{{ row.label }}</span>
-              <b :class="row.level ? `status-${row.level}` : ''">{{ row.value }}</b>
+                <b v-if="row.loading" class="loading-bar"></b>
+                <b v-else :class="row.level ? `status-${row.level}` : ''">{{ row.value }}</b>
               </div>
             </div>
+            <button
+              v-if="hdfsData"
+              class="map-suggestion-btn"
+              @click="openSuggestionDialog(activeDetailPopup)"
+            >查看防治建议</button>
           </div>
         </div>
 
@@ -1016,14 +1445,14 @@ onBeforeUnmount(() => {
           </div>
           <div class="suggest-content">
             <p>
-              预计产量：<b>{{ activeDecisionMetrics.expectedYield.toFixed(2) }}公斤/亩</b>
+              预计产量：<b>{{ activeDecisionMetrics.expectedYield != null ? activeDecisionMetrics.expectedYield.toFixed(2) + '公斤/亩' : '--' }}</b>
               <span>生长阶段：{{ activeDecisionMetrics.growthPeriod }}</span>
             </p>
-            <p>恢复产量：<b>{{ activeDecisionMetrics.recoveryYield.toFixed(2) }}公斤/亩</b></p>
+            <p>恢复产量：<b>{{ activeDecisionMetrics.recoveryYield != null ? activeDecisionMetrics.recoveryYield.toFixed(2) + '公斤/亩' : '--' }}</b></p>
 
             <div class="suggest-progress">
               <i :style="{ width: `${activeDecisionMetrics.recoveryProgress}%` }"></i>
-              <em>{{ activeDecisionMetrics.recoveryYield.toFixed(2) }}公斤/亩</em>
+              <em>{{ activeDecisionMetrics.recoveryYield != null ? activeDecisionMetrics.recoveryYield.toFixed(2) + '公斤/亩' : '--' }}</em>
             </div>
           </div>
 
@@ -1104,12 +1533,68 @@ onBeforeUnmount(() => {
           <h3>{{ planDialogTitle }}</h3>
           <button class="plan-close-btn" @click="closePlanDialog">关闭</button>
         </div>
-        <ul class="plan-dialog-list">
-          <li v-for="(step, idx) in planDialogSteps" :key="step">
+        <!-- Fallback: simple text steps -->
+        <ul v-if="planDialogFallback" class="plan-dialog-list">
+          <li v-for="(step, idx) in planDialogFallback" :key="idx">
             <em>{{ idx + 1 }}</em>
             <span>{{ step }}</span>
           </li>
         </ul>
+        <!-- HDFS: collapsible phases -->
+        <div v-else-if="planDialogPhases" class="plan-phase-list">
+          <div
+            v-for="(phase, idx) in planDialogPhases.phases"
+            :key="idx"
+            class="plan-phase-item"
+          >
+            <div class="plan-phase-header" @click="togglePlanPhase(idx)">
+              <em>{{ idx + 1 }}</em>
+              <div class="plan-phase-header-text">
+                <span class="plan-phase-name">{{ phase.title }}</span>
+                <span class="plan-phase-target">{{ phase.target }}</span>
+              </div>
+              <span class="plan-phase-arrow">{{ expandedPlanPhases.includes(idx) ? '▼' : '▶' }}</span>
+            </div>
+            <div v-if="expandedPlanPhases.includes(idx)" class="plan-phase-body">
+              <div v-if="phase.leafOps" class="phase-ops-section">
+                <h4>叶害防控/预防</h4>
+                <div v-for="(ops, pestName) in phase.leafOps" :key="pestName" class="phase-pest-item">
+                  <h5>{{ pestName }}</h5>
+                  <p v-for="(value, key) in ops" :key="key" v-show="typeof value === 'string' && value !== '无操作' && value !== '无操作（未发生，无需用药）' && value !== '无操作（未发生，无需补防）'">
+                    <b>{{ key }}：</b>{{ value }}
+                  </p>
+                </div>
+              </div>
+              <div v-if="phase.pestOps" class="phase-ops-section">
+                <h4>虫害防控/预防</h4>
+                <div v-for="(ops, pestName) in phase.pestOps" :key="pestName" class="phase-pest-item">
+                  <h5>{{ pestName }}</h5>
+                  <p v-for="(value, key) in ops" :key="key" v-show="typeof value === 'string' && value !== '无操作'">
+                    <b>{{ key }}：</b>{{ value }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Notes section -->
+          <div v-if="planDialogNotes" class="plan-phase-notes">
+            <h4>通用注意事项</h4>
+            <p v-for="(value, key) in planDialogNotes" :key="key" v-show="typeof value === 'string'">
+              <b>{{ key }}：</b>{{ value }}
+            </p>
+            <p v-if="planDialogPhases.notes?.['兜底说明']"><b>兜底说明：</b>{{ planDialogPhases.notes['兜底说明'] }}</p>
+          </div>
+        </div>
+      </section>
+    </div>
+    <!-- 防治建议弹窗 -->
+    <div v-if="activeSuggestionType" class="plan-dialog-mask" @click.self="closeSuggestionDialog">
+      <section class="plan-dialog panel suggestion-dialog">
+        <div class="plan-dialog-head">
+          <h3>{{ suggestionTitle }}</h3>
+          <button class="plan-close-btn" @click="closeSuggestionDialog">关闭</button>
+        </div>
+        <div class="suggestion-body" v-html="suggestionContent"></div>
       </section>
     </div>
     </template>
@@ -1707,6 +2192,10 @@ onBeforeUnmount(() => {
   border-color: rgba(54, 196, 255, 0.48);
 }
 
+.inspect-head h3 {
+  margin: 0;
+}
+
 .inspect-head,
 .analysis-head,
 .suggest-head {
@@ -1748,8 +2237,9 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 16px;
   top: 16px;
-  width: 320px;
-  height: 320px;
+  width: 550px;
+  max-height: 520px;
+  overflow-y: auto;
   border-radius: 14px;
   border: 1px solid rgba(122, 206, 255, 0.62);
   background: linear-gradient(180deg, rgba(9, 44, 99, 0.92), rgba(7, 29, 69, 0.9));
@@ -1761,7 +2251,7 @@ onBeforeUnmount(() => {
 }
 
 .map-detail-title {
-  font-size: 15px;
+  font-size: 17px;
   color: #9ee9ff;
   font-weight: 700;
   margin-bottom: 10px;
@@ -1769,7 +2259,7 @@ onBeforeUnmount(() => {
 
 .map-detail-body {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .map-detail-row {
@@ -1778,18 +2268,40 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   border: 1px solid rgba(108, 193, 255, 0.24);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   background: rgba(7, 31, 73, 0.45);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .map-detail-row span {
   color: #bcdfff;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-right: 10px;
 }
 
 .map-detail-row b {
   color: #eef9ff;
   font-weight: 600;
+  text-align: right;
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.map-detail-row b.loading-bar {
+  display: inline-block;
+  width: 60%;
+  height: 16px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(86, 180, 255, 0.12), rgba(86, 180, 255, 0.3), rgba(86, 180, 255, 0.12));
+  background-size: 200% 100%;
+  animation: detailLoading 1.4s ease-in-out infinite;
+}
+
+@keyframes detailLoading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .map-detail-row b.status-normal {
@@ -1804,11 +2316,217 @@ onBeforeUnmount(() => {
   color: #ff8f86;
 }
 
+.map-suggestion-btn {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 12px auto;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(121, 214, 255, 0.45);
+  background: linear-gradient(90deg, rgba(23, 102, 196, 0.52), rgba(27, 153, 223, 0.42));
+  color: #b8daff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.map-suggestion-btn:hover {
+  border-color: rgba(121, 214, 255, 0.8);
+  color: #e8faff;
+  background: linear-gradient(90deg, rgba(23, 102, 196, 0.72), rgba(27, 153, 223, 0.62));
+}
+
+/* ── Suggestion dialog ── */
+.suggestion-dialog {
+  max-width: 680px;
+  max-height: 76vh;
+  overflow-y: auto;
+}
+
+.suggestion-body {
+  padding: 8px 0;
+  color: #c5e0f0;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.suggestion-body h4 {
+  margin: 14px 0 6px;
+  color: #7fe3ff;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(86, 198, 255, 0.2);
+  padding-bottom: 4px;
+}
+
+.suggestion-body h5 {
+  margin: 8px 0 4px;
+  color: #a8dcff;
+  font-size: 13px;
+}
+
+.suggestion-body p {
+  margin: 2px 0;
+  padding: 2px 0;
+}
+
+.suggestion-body p b {
+  color: #90c8f0;
+}
+
+.suggestion-summary {
+  background: rgba(12, 72, 138, 0.25);
+  border-left: 3px solid rgba(121, 214, 255, 0.5);
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.suggestion-empty {
+  color: #5c7e9e;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* ── Collapsible plan phases ── */
+.plan-phase-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.plan-phase-item {
+  border: 1px solid rgba(112, 206, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(8, 35, 80, 0.4);
+  overflow: hidden;
+}
+
+.plan-phase-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.18s ease;
+  user-select: none;
+}
+
+.plan-phase-header:hover {
+  background: rgba(12, 72, 138, 0.3);
+}
+
+.plan-phase-header em {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 12px;
+  color: #042340;
+  background: #8fe4ff;
+  flex-shrink: 0;
+}
+
+.plan-phase-header-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-phase-name {
+  color: #dcf0ff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.plan-phase-target {
+  color: #7a9ab8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.plan-phase-arrow {
+  color: #7fe3ff;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.plan-phase-body {
+  padding: 8px 12px 12px;
+  border-top: 1px solid rgba(112, 206, 255, 0.12);
+}
+
+.phase-ops-section {
+  margin-bottom: 10px;
+}
+
+.phase-ops-section h4 {
+  color: #7fe3ff;
+  font-size: 13px;
+  margin: 0 0 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(86, 198, 255, 0.16);
+}
+
+.phase-pest-item {
+  margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(86, 198, 255, 0.18);
+}
+
+.phase-pest-item h5 {
+  color: #a8dcff;
+  font-size: 12px;
+  margin: 0 0 3px;
+}
+
+.phase-pest-item p {
+  margin: 1px 0;
+  font-size: 11px;
+  color: #99bcd0;
+  line-height: 1.6;
+}
+
+.phase-pest-item p b {
+  color: #8ab8d8;
+}
+
+.plan-phase-notes {
+  border: 1px solid rgba(112, 206, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(8, 35, 80, 0.35);
+  padding: 12px;
+}
+
+.plan-phase-notes h4 {
+  color: #7fe3ff;
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+
+.plan-phase-notes p {
+  margin: 2px 0;
+  font-size: 11px;
+  color: #99bcd0;
+  line-height: 1.6;
+}
+
+.plan-phase-notes p b {
+  color: #8ab8d8;
+}
+
 .analysis-panel .progress {
   margin-bottom: 12px;
 }
 
-.inspect-head h3,
 .analysis-head h3,
 .suggest-head h3 {
   margin: 0;
