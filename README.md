@@ -432,3 +432,27 @@ client.upload_json("/user/danglong/output/site_01/result.json", data)
 - 数据仓库连接基于 [PyHive](https://github.com/dropbox/PyHive) + SQLAlchemy
 - 分布式存储基于 WebHDFS REST API
 - 算法竞赛演示路线图详见 `算法开发/演示路线图.md`
+
+---
+
+## 📋 更新日志
+
+### 2026-05-10
+
+**前端大屏 — HDFS 数据集成**
+
+- 新增 `fetchHdfsPointData` 直连 readhdfs 服务，按日期+站点读取 `all.json`
+- `parseJsonLike` 增加 Dify 输出容错：自动修复 LLM 生成的未加引号值（如 `35公斤/亩` → `"35公斤/亩"`）
+- 三个详情弹窗（田间巡检/环境分析/决策推演）优先展示 HDFS 真实数据
+- 详情弹窗放大至 550px，底部新增"查看防治建议"按钮，弹出完整建议内容
+- 方案 A/B 弹窗改为可折叠阶段下拉框，展开后显示每个病虫害的化学/农业/人工操作
+- 决策推演模块预计产量、恢复产量优先从 HDFS 读取，无数据时显示 `--`
+- 切换站点/日期时立即清空旧数据，请求竞态保护防止数据错乱
+- 前端直连 `192.168.157.130:8000`，不经过本地代理
+
+**数据管道 — 路径修复与性能优化**
+
+- `main.py` / `main_ys.py` 路径改为基于 `__file__` 的绝对路径，解决 VSCode 执行目录不一致问题
+- `parse_json_like` 增加 LLM 输出修复，容错非标准 JSON 值
+- HDFS 写入从 5 个单独 JSON 合并为 1 个 `all.json`，读写次数从 6 次降为 1 次
+- 新增 `output3`（方案B）提取与存储
