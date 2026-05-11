@@ -51,6 +51,15 @@ Rice-Pro-Max/
 │   ├── 叶害识别测试图片/                    #   叶害测试图片
 │   └── 虫害识别测试图片/                    #   虫害测试图片
 │
+├── 数据处理/                               # 数据入库与清洗流水线
+│   ├── scripts/
+│   │   └── data_pipeline.py                #   统一流水线（双击自动执行全流程）
+│   ├── data/
+│   │   ├── weather_hour.csv                #     天气小时原始数据
+│   │   └── soil_data.csv                   #     土壤日观测原始数据
+│   ├── cols.txt                            #   天气 CSV 列名对照
+│   └── requirements.txt                    #   Python 依赖
+│
 ├── 前端开发/                               # Vue 3 前端大屏
 │   ├── index.html                         #   入口 HTML
 │   ├── package.json                       #   Node 依赖
