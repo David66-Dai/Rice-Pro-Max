@@ -1,11 +1,5 @@
-﻿node_modules/
-dist/
-__pycache__/
+﻿__pycache__/
 *.pyc
-runs/
-checkpoints/
-*.pt
-.DS_Store
 
 # IDE
 .vscode/
