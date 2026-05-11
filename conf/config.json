@@ -1,0 +1,39 @@
+{
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "password": "dl090313",
+    "database": "rice_pro_max"
+  },
+  "hdfs": {
+    "host": "192.168.157.130",
+    "port": 9870,
+    "user": "root",
+    "output_path": "/rice/output"
+  },
+  "hive": {
+    "host": "192.168.157.130",
+    "port": 10000,
+    "user": "root",
+    "database": "farm"
+  },
+  "dify": {
+    "disease": {
+      "base_url": "http://localhost/v1",
+      "api_key": "app-iih560VbcQE9OUv73JZa2Z1W"
+    },
+    "weather": {
+      "base_url": "http://localhost/v1",
+      "api_key": "app-z3Big0jVIE0trd41Z71YovCQ"
+    },
+    "soil": {
+      "base_url": "http://localhost/v1",
+      "api_key": "app-kXLCBoqsjMgPNa7W6ljw8ye6"
+    },
+    "final": {
+      "base_url": "http://localhost/v1",
+      "api_key": "app-DPclZkCBsQJV8GAiIldDriSj"
+    }
+  }
+}

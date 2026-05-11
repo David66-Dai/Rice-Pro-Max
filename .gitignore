@@ -13,8 +13,6 @@ checkpoints/
 .idea/
 .claude/
 
-# config (contains passwords & API keys)
-conf/*
 
 # api
 api/__pycache__/
