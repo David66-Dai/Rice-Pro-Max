@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import riceFieldBg from './assets/rice.png'
 import HistoryCharts from './components/HistoryCharts.vue'
-import { fetchMonitoringState, fetchHdfsPointData, identifyLeafDamage, identifyPestDamage, saveMonitoringRecord } from './api/agriDiagnosis'
+import { fetchMonitoringState, fetchHdfsPointData, fetchStationRealtime, identifyLeafDamage, identifyPestDamage, saveMonitoringRecord } from './api/agriDiagnosis'
 
 const stationPoints = ref([
   { x: 21, y: 16 }, { x: 32, y: 18 }, { x: 41, y: 16 },
@@ -86,7 +86,11 @@ const pestTypeLabels = ['二化螟', '稻纵卷叶螟', '褐飞虱']
 const hdfsData = ref(null)
 const hdfsAttempted = ref(false)
 const hdfsLoading = ref(false)
+const realtimeData = ref(null)
+const realtimeLoading = ref(false)
+const realtimeAttempted = ref(false)
 let hdfsRequestId = 0
+let realtimeRequestId = 0
 const activeSuggestionType = ref('')
 const expandedPlanPhases = ref([])
 const INSPECT_DEFAULT_ITEMS = [
@@ -446,6 +450,33 @@ async function loadHdfsData() {
   }
 }
 
+async function loadRealtimeData() {
+  const code = activeStation.value?.code
+  const dateKey = selectedDateKey.value
+  const reqId = ++realtimeRequestId
+  realtimeData.value = null
+  realtimeLoading.value = true
+  if (!code || !dateKey) {
+    realtimeLoading.value = false
+    return
+  }
+
+  try {
+    const result = await fetchStationRealtime(code, dateKey)
+    if (reqId !== realtimeRequestId) return
+    realtimeData.value = result
+  } catch (e) {
+    if (reqId !== realtimeRequestId) return
+    console.warn('站点实时数据加载失败:', e.message)
+    realtimeData.value = null
+  } finally {
+    if (reqId === realtimeRequestId) {
+      realtimeAttempted.value = true
+      realtimeLoading.value = false
+    }
+  }
+}
+
 function parseYieldNumber(text) {
   if (!text) return null
   const match = String(text).match(/([\d.]+)/)
@@ -619,13 +650,36 @@ const activeStation = computed(() => {
     soilConductivity: +clamp(base.soilConductivity + dayShift * 0.01, 0.2, 3).toFixed(2)
   }
 })
+const metricDisplay = computed(() => {
+  const w = realtimeData.value?.weather
+  const s = realtimeData.value?.soil
+
+  function fmt(val, decimals, unit) {
+    if (val == null || !Number.isFinite(Number(val))) return '--'
+    return Number(val).toFixed(decimals)
+  }
+
+  return {
+    sunshineHours:     { value: fmt(w?.sunshine_hours, 1),        unit: 'h' },
+    avgWindSpeed:      { value: fmt(w?.wind_speed, 2),           unit: 'm/s' },
+    dailyRainfall:     { value: fmt(w?.precipitation, 1),         unit: 'mm' },
+    avgAirTemp:        { value: fmt(w?.temperature, 1),           unit: '℃' },
+    relativeHumidity:  { value: fmt(w?.humidity, 1),              unit: '%' },
+    soilOrganicMatter: { value: fmt(s?.organic_matter, 2),        unit: '%' },
+    soilAcidity:       { value: fmt(s?.ph, 2),                   unit: 'ph' },
+    soilPhosphorus:    { value: fmt(s?.phosphorus, 1),            unit: 'mg/kg' },
+    soilPotassium:     { value: fmt(s?.potassium, 2),            unit: 'mg/kg' },
+    soilConductivity:  { value: fmt(s?.conductivity, 2),          unit: 'dS/m' },
+  }
+})
+
 const cropHealthIndex = computed(() => {
   const station = activeStation.value
   const climateScore = weightedAverage([
-    { score: scoreByRange(station.avgAirTemp, 24, 32, 18, 38), weight: 0.3 },
-    { score: scoreByRange(station.relativeHumidity, 65, 85, 45, 95), weight: 0.3 },
-    { score: scoreByRange(station.sunshineHours, 4, 8, 2, 11), weight: 0.2 },
-    { score: scoreByRange(station.avgWindSpeed, 0.8, 2.5, 0.2, 5), weight: 0.2 }
+    { score: scoreByRange(realtimeData.value?.weather?.temperature ?? station.avgAirTemp, 24, 32, 18, 38), weight: 0.3 },
+    { score: scoreByRange(realtimeData.value?.weather?.humidity ?? station.relativeHumidity, 65, 85, 45, 95), weight: 0.3 },
+    { score: scoreByRange(realtimeData.value?.weather?.sunshine_hours ?? station.sunshineHours, 4, 8, 2, 11), weight: 0.2 },
+    { score: scoreByRange(realtimeData.value?.weather?.wind_speed ?? station.avgWindSpeed, 0.8, 2.5, 0.2, 5), weight: 0.2 }
   ])
   const riskPenalty = getRiskPenalty(stationRiskLevelMap.value[station.code] || 'normal')
   return Math.max(0, Math.min(100, Math.round(climateScore - riskPenalty)))
@@ -635,9 +689,9 @@ const soilActivityIndex = computed(() => {
   const station = activeStation.value
   const soilScore = weightedAverage([
     { score: scoreByRange(station.moisture, 35, 70, 20, 90), weight: 0.35 },
-    { score: scoreByRange(station.soilAcidity, 5.8, 6.8, 5.0, 7.8), weight: 0.25 },
-    { score: scoreByRange(station.soilOrganicMatter, 3.5, 6.0, 2.0, 8.5), weight: 0.2 },
-    { score: scoreByRange(station.soilConductivity, 0.6, 1.4, 0.2, 2.4), weight: 0.2 }
+    { score: scoreByRange(realtimeData.value?.soil?.ph ?? station.soilAcidity, 5.8, 6.8, 5.0, 7.8), weight: 0.25 },
+    { score: scoreByRange(realtimeData.value?.soil?.organic_matter ?? station.soilOrganicMatter, 3.5, 6.0, 2.0, 8.5), weight: 0.2 },
+    { score: scoreByRange(realtimeData.value?.soil?.conductivity ?? station.soilConductivity, 0.6, 1.4, 0.2, 2.4), weight: 0.2 }
   ])
   const riskPenalty = getRiskPenalty(stationRiskLevelMap.value[station.code] || 'normal') * 0.4
   return Math.max(0, Math.min(100, Math.round(soilScore - riskPenalty)))
@@ -646,16 +700,20 @@ const soilActivityIndex = computed(() => {
 const activeDecisionMetrics = computed(() => {
   const station = activeStation.value
   const riskLevel = stationRiskLevelMap.value[station.code] || 'normal'
+  const avgTemp = realtimeData.value?.weather?.temperature ?? station.avgAirTemp
   const growthPeriod = getGrowthPeriodByCalendar(
     selectedYear.value,
     selectedMonth.value,
     selectedDay.value,
-    station.avgAirTemp
+    avgTemp
   )
   const stageFactor = getStageYieldFactor(growthPeriod)
 
+  const om = realtimeData.value?.soil?.organic_matter ?? station.soilOrganicMatter
+  const sp = realtimeData.value?.soil?.phosphorus ?? station.soilPhosphorus
+  const sk = realtimeData.value?.soil?.potassium ?? station.soilPotassium
   const potentialYield = clamp(
-    450 + station.soilOrganicMatter * 18 + (station.soilPhosphorus - 30) * 1.2 + (station.soilPotassium - 180) * 0.18,
+    450 + om * 18 + (sp - 30) * 1.2 + (sk - 180) * 0.18,
     420,
     680
   )
@@ -1212,6 +1270,7 @@ onMounted(() => {
   loadInspectMapFromStorage()
   loadInspectMapFromServer()
   loadHdfsData()
+  loadRealtimeData()
   beijingTimer = window.setInterval(() => {
     beijingNow.value = getBeijingDateParts()
   }, 1000)
@@ -1223,6 +1282,7 @@ watch(selectedDateKey, (dateKey) => {
 
 watch([selectedDateKey, () => activeStation.value?.code], () => {
   loadHdfsData()
+  loadRealtimeData()
 })
 
 onBeforeUnmount(() => {
@@ -1338,43 +1398,53 @@ onBeforeUnmount(() => {
         <div class="metrics-row">
           <div class="metric">
             <label>日照时长</label>
-            <strong>{{ activeStation.sunshineHours }}<small>h</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>h</small></strong>
+            <strong v-else>{{ metricDisplay.sunshineHours.value }}<small>{{ metricDisplay.sunshineHours.value !== '--' ? metricDisplay.sunshineHours.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>日平均风速</label>
-            <strong>{{ activeStation.avgWindSpeed }}<small>m/s</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>m/s</small></strong>
+            <strong v-else>{{ metricDisplay.avgWindSpeed.value }}<small>{{ metricDisplay.avgWindSpeed.value !== '--' ? metricDisplay.avgWindSpeed.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>日降水量</label>
-            <strong>{{ activeStation.dailyRainfall }}<small>mm</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>mm</small></strong>
+            <strong v-else>{{ metricDisplay.dailyRainfall.value }}<small>{{ metricDisplay.dailyRainfall.value !== '--' ? metricDisplay.dailyRainfall.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>日平均温度</label>
-            <strong>{{ activeStation.avgAirTemp }}<small>℃</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>℃</small></strong>
+            <strong v-else>{{ metricDisplay.avgAirTemp.value }}<small>{{ metricDisplay.avgAirTemp.value !== '--' ? metricDisplay.avgAirTemp.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>日相对湿度</label>
-            <strong>{{ activeStation.relativeHumidity }}<small>%</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>%</small></strong>
+            <strong v-else>{{ metricDisplay.relativeHumidity.value }}<small>{{ metricDisplay.relativeHumidity.value !== '--' ? metricDisplay.relativeHumidity.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>土壤有机质</label>
-            <strong>{{ activeStation.soilOrganicMatter }}<small>%</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>%</small></strong>
+            <strong v-else>{{ metricDisplay.soilOrganicMatter.value }}<small>{{ metricDisplay.soilOrganicMatter.value !== '--' ? metricDisplay.soilOrganicMatter.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>土壤酸碱度</label>
-            <strong>{{ activeStation.soilAcidity }}<small>ph</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>ph</small></strong>
+            <strong v-else>{{ metricDisplay.soilAcidity.value }}<small>{{ metricDisplay.soilAcidity.value !== '--' ? metricDisplay.soilAcidity.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>土壤磷含量</label>
-            <strong>{{ activeStation.soilPhosphorus }}<small>mg/kg</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>mg/kg</small></strong>
+            <strong v-else>{{ metricDisplay.soilPhosphorus.value }}<small>{{ metricDisplay.soilPhosphorus.value !== '--' ? metricDisplay.soilPhosphorus.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>土壤钾含量</label>
-            <strong>{{ activeStation.soilPotassium }}<small>mg/kg</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>mg/kg</small></strong>
+            <strong v-else>{{ metricDisplay.soilPotassium.value }}<small>{{ metricDisplay.soilPotassium.value !== '--' ? metricDisplay.soilPotassium.unit : '' }}</small></strong>
           </div>
           <div class="metric">
             <label>土壤电导率</label>
-            <strong>{{ activeStation.soilConductivity }}<small>dS/m</small></strong>
+            <strong v-if="realtimeLoading && !realtimeAttempted" class="metric-loading">--<small>dS/m</small></strong>
+            <strong v-else>{{ metricDisplay.soilConductivity.value }}<small>{{ metricDisplay.soilConductivity.value !== '--' ? metricDisplay.soilConductivity.unit : '' }}</small></strong>
           </div>
         </div>
       </article>
@@ -1602,6 +1672,7 @@ onBeforeUnmount(() => {
       v-else
       :station-code="activeStation.code"
       :station-name="activeStation.name"
+      :year="selectedYear"
       @back="closeHistoryChartsView"
     />
   </main>
@@ -2167,6 +2238,10 @@ onBeforeUnmount(() => {
   font-size: 18px;
   color: #8fd9ff;
   font-weight: 600;
+}
+
+.metric-loading {
+  opacity: 0.5;
 }
 
 .right-panels {

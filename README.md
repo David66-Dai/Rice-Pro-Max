@@ -437,6 +437,30 @@ client.upload_json("/user/danglong/output/site_01/result.json", data)
 
 ## 📋 更新日志
 
+### 2026-05-11
+
+**后端 API — MySQL 实时数据查询**
+
+- 新增 `GET /api/station/{station_code}/realtime?date=YYYY-MM-DD` 端点，实时查询 `station_weather_daily` + `station_soil_daily` 两张表，返回气象 + 土壤组合数据
+- 新增 `GET /api/station/{station_code}/history?year=YYYY` 端点，返回全年 12 个月的月度聚合平均值
+- `_resolve_station_ids` 自动映射前端站点编码（`ST-001`）到 MySQL 多种格式（`point_1` / `1` 等）
+
+**前端大屏 — 真实 MySQL 数据驱动**
+
+- 10 个指标卡片（日照/风速/降水/温湿度/有机质/pH/磷/钾/电导率）从硬编码公式改为实时 MySQL 数据
+- 无数据时统一显示 `--`，加载中显示半透明占位
+- 作物健康指数、土壤活性指数、决策推演优先使用 MySQL 真实值，无数据时回退到公式估算
+- 历史图表分析（日照/降水/气温）从静态硬编码改为按站点+年份查询 MySQL
+- 前端 API 层新增 `fetchStationRealtime` 和 `fetchStationHistory` 函数
+
+**数据处理 — 脚本合并优化**
+
+- 4 个独立脚本（天气入库/土壤入库/日照修复/风速降水修复）合并为统一的 `数据流水线/data_pipeline.py`
+- 消除 4 处重复的 `mysql_connect`、argparse、建表 SQL，抽取为共享函数
+- 双击或直接 `python data_pipeline.py` 无参数运行自动执行全部步骤（天气 → 土壤 → 清洗）
+- 子命令（`weather` / `soil` / `cleanup` / `all`）仍保留供单独调用
+- 移除旧的 4 个独立脚本文件
+
 ### 2026-05-10
 
 **前端大屏 — HDFS 数据集成**

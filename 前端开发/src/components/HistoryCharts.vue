@@ -1,13 +1,18 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import { fetchStationHistory } from '../api/agriDiagnosis'
 
 const props = defineProps({
   stationCode: { type: String, default: '' },
-  stationName: { type: String, default: '' }
+  stationName: { type: String, default: '' },
+  year: { type: Number, default: () => new Date().getFullYear() }
 })
 
 const emit = defineEmits(['back'])
+
+const historyData = ref(null)
+const historyLoading = ref(false)
 
 // ==================== 数据 ====================
 
@@ -35,25 +40,49 @@ const stationYield = [
 ]
 
 // chart3: 月均日照
-const sunshineData = [
+const sunshineFallback = [
   { month: '7月', value: 5.30 }, { month: '8月', value: 5.56 },
   { month: '9月', value: 6.32 }, { month: '10月', value: 5.55 },
   { month: '11月', value: 2.37 }, { month: '12月', value: 3.36 },
 ]
 
 // chart4: 月均降水量
-const rainfallData = [
+const rainfallFallback = [
   { month: '7月', value: 10.5 }, { month: '8月', value: 9.8 },
   { month: '9月', value: 4.2 }, { month: '10月', value: 3.0 },
   { month: '11月', value: 2.2 }, { month: '12月', value: 1.2 },
 ]
 
 // chart5: 月均气温
-const tempData = [
+const tempFallback = [
   { month: '7月', value: 27.7 }, { month: '8月', value: 28.0 },
   { month: '9月', value: 27.9 }, { month: '10月', value: 23.1 },
   { month: '11月', value: 18.0 }, { month: '12月', value: 13.4 },
 ]
+
+function sunshineData() {
+  const monthly = historyData.value?.monthly
+  if (monthly && monthly.length > 0 && monthly.some(m => m.sunshine != null)) {
+    return monthly.map(m => ({ month: m.month, value: m.sunshine ?? null }))
+  }
+  return sunshineFallback
+}
+
+function rainfallData() {
+  const monthly = historyData.value?.monthly
+  if (monthly && monthly.length > 0 && monthly.some(m => m.precipitation != null)) {
+    return monthly.map(m => ({ month: m.month, value: m.precipitation ?? null }))
+  }
+  return rainfallFallback
+}
+
+function tempData() {
+  const monthly = historyData.value?.monthly
+  if (monthly && monthly.length > 0 && monthly.some(m => m.temperature != null)) {
+    return monthly.map(m => ({ month: m.month, value: m.temperature ?? null }))
+  }
+  return tempFallback
+}
 
 // ==================== 图表 refs ====================
 const c1Ref = ref(null)
@@ -141,11 +170,14 @@ function initChart2() {
 function initChart3() {
   if (!c3Ref.value) return
   const chart = echarts.init(c3Ref.value)
+  const data = sunshineData()
+  const values = data.map(d => d.value)
+  const hasData = values.some(v => v != null)
   chart.setOption({
     tooltip: { trigger: 'axis' },
     grid: { left: '12%', right: '6%', top: 20, bottom: 28 },
     xAxis: {
-      type: 'category', data: sunshineData.map(d => d.month),
+      type: 'category', data: data.map(d => d.month),
       axisLine: { lineStyle: { color: '#2a4a6e' } }, axisLabel: { color: '#7a9ab8' },
       name: '月份', nameTextStyle: { color: '#7a9ab8', fontSize: 10 }
     },
@@ -154,9 +186,9 @@ function initChart3() {
       axisLabel: { color: '#7a9ab8' }, splitLine: { lineStyle: { color: '#1a3350', type: 'dashed' } }
     },
     series: [{
-      type: 'bar', data: sunshineData.map(d => d.value), barWidth: '45%',
+      type: 'bar', data: values, barWidth: '45%',
       itemStyle: { color: '#ffa502', borderRadius: [6, 6, 0, 0] },
-      label: { show: true, position: 'top', color: '#ffa502', fontSize: 12, formatter: '{c}h' }
+      label: { show: hasData, position: 'top', color: '#ffa502', fontSize: 12, formatter: p => p.value != null ? p.value + 'h' : '' }
     }]
   })
   charts.push(chart)
@@ -165,8 +197,10 @@ function initChart3() {
 function initChart4() {
   if (!c4Ref.value) return
   const chart = echarts.init(c4Ref.value)
-  const months = rainfallData.map(d => d.month)
-  const values = rainfallData.map(d => d.value)
+  const data = rainfallData()
+  const months = data.map(d => d.month)
+  const values = data.map(d => d.value)
+  const hasData = values.some(v => v != null)
 
   // 简单线性趋势
   const n = values.length
@@ -199,7 +233,7 @@ function initChart4() {
             { offset: 0, color: '#5dade2' }, { offset: 1, color: '#2e86c1' }
           ])
         },
-        label: { show: true, position: 'top', color: '#8fd4ff', fontSize: 11, formatter: '{c}mm' }
+        label: { show: hasData, position: 'top', color: '#8fd4ff', fontSize: 11, formatter: p => p.value != null ? p.value + 'mm' : '' }
       },
       {
         name: '趋势线', type: 'line', data: trend,
@@ -214,8 +248,10 @@ function initChart4() {
 function initChart5() {
   if (!c5Ref.value) return
   const chart = echarts.init(c5Ref.value)
-  const months = tempData.map(d => d.month)
-  const temps = tempData.map(d => d.value)
+  const data = tempData()
+  const months = data.map(d => d.month)
+  const temps = data.map(d => d.value)
+  const hasData = temps.some(v => v != null)
   const optimalMin = 24, optimalMax = 32
 
   chart.setOption({
@@ -236,7 +272,7 @@ function initChart5() {
         type: 'line', data: temps, name: '月均气温',
         lineStyle: { color: '#ff6348', width: 2.5 }, itemStyle: { color: '#ff6348' },
         symbol: 'circle', symbolSize: 10,
-        label: { show: true, color: '#ff6348', fontSize: 12, formatter: '{c}℃', distance: 10 },
+        label: { show: hasData, color: '#ff6348', fontSize: 12, formatter: p => p.value != null ? p.value + '℃' : '', distance: 10 },
         markArea: {
           silent: true,
           itemStyle: { color: 'rgba(77, 201, 255, 0.12)' },
@@ -263,8 +299,36 @@ function initChart5() {
   charts.push(chart)
 }
 
+function disposeAll() {
+  charts.forEach(c => c?.dispose())
+  charts = []
+}
+
+function initAllCharts() {
+  disposeAll()
+  initChart1()
+  initChart2()
+  initChart3()
+  initChart4()
+  initChart5()
+}
+
 function resizeAll() {
   charts.forEach(c => c?.resize())
+}
+
+async function loadHistory() {
+  if (!props.stationCode) return
+  historyLoading.value = true
+  try {
+    historyData.value = await fetchStationHistory(props.stationCode, props.year)
+  } catch (e) {
+    console.warn('历史数据加载失败:', e.message)
+    historyData.value = null
+  } finally {
+    historyLoading.value = false
+    initAllCharts()
+  }
 }
 
 onMounted(() => {
@@ -273,7 +337,12 @@ onMounted(() => {
   initChart3()
   initChart4()
   initChart5()
+  loadHistory()
   window.addEventListener('resize', resizeAll)
+})
+
+watch(() => [props.stationCode, props.year], () => {
+  loadHistory()
 })
 
 onBeforeUnmount(() => {

@@ -280,6 +280,172 @@ def _load_records_from_csv(date_value: str) -> dict[str, list[dict[str, Any]]]:
     return records_by_point
 
 
+def _mysql_query_db() -> pymysql.connections.Connection:
+    """Return a connection with DictCursor for read queries (all tables)."""
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", "123456"),
+        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def _resolve_station_ids(station_code: str) -> list[str]:
+    """Map frontend station code (ST-001) to possible MySQL station_id values."""
+    candidates = [station_code]
+    # ST-001 -> 1
+    num = station_code.replace("ST-", "").replace("st-", "").lstrip("0") or "0"
+    candidates.append(num)
+    candidates.append(str(int(num)))
+    # ST-001 -> point_1 (CSV 原始格式)
+    candidates.append(f"point_{int(num)}")
+    candidates.append(f"Point_{int(num)}")
+    return candidates
+
+
+@app.get("/api/station/{station_code}/realtime")
+def get_station_realtime(station_code: str, date: str) -> dict[str, Any]:
+    """Return combined weather + soil data for a station on a given date."""
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date 格式必须为 YYYY-MM-DD")
+
+    station_ids = _resolve_station_ids(station_code)
+    conn = _mysql_query_db()
+    try:
+        weather = None
+        soil = None
+
+        with conn.cursor() as cur:
+            # --- weather ---
+            placeholders = ",".join(["%s"] * len(station_ids))
+            cur.execute(
+                f"""SELECT station_id, stat_date,
+                           sunshine_duration_mean, wind_speed_daily_mean,
+                           precipitation_daily, temperature_daily_mean,
+                           relative_humidity_daily_mean
+                    FROM station_weather_daily
+                    WHERE station_id IN ({placeholders}) AND stat_date = %s
+                    LIMIT 1""",
+                (*station_ids, date),
+            )
+            w = cur.fetchone()
+            if w:
+                weather = {
+                    "sunshine_hours": w["sunshine_duration_mean"],
+                    "wind_speed": w["wind_speed_daily_mean"],
+                    "precipitation": w["precipitation_daily"],
+                    "temperature": w["temperature_daily_mean"],
+                    "humidity": w["relative_humidity_daily_mean"],
+                }
+
+            # --- soil ---
+            cur.execute(
+                f"""SELECT station_id, stat_date,
+                           soil_om_percent, soil_ph, soil_p_ppm,
+                           soil_k_ppm, soil_ec_ds_m
+                    FROM station_soil_daily
+                    WHERE station_id IN ({placeholders}) AND stat_date = %s
+                    LIMIT 1""",
+                (*station_ids, date),
+            )
+            s = cur.fetchone()
+            if s:
+                soil = {
+                    "organic_matter": s["soil_om_percent"],
+                    "ph": s["soil_ph"],
+                    "phosphorus": s["soil_p_ppm"],
+                    "potassium": s["soil_k_ppm"],
+                    "conductivity": s["soil_ec_ds_m"],
+                }
+    finally:
+        conn.close()
+
+    return {"station_code": station_code, "date": date, "weather": weather, "soil": soil}
+
+
+@app.get("/api/station/{station_code}/history")
+def get_station_history(station_code: str, year: int) -> dict[str, Any]:
+    """Return monthly-aggregated weather/soil history for a station in a given year."""
+    station_ids = _resolve_station_ids(station_code)
+    conn = _mysql_query_db()
+    try:
+        with conn.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(station_ids))
+            cur.execute(
+                f"""SELECT
+                        MONTH(stat_date) AS m,
+                        ROUND(AVG(sunshine_duration_mean), 2) AS sunshine,
+                        ROUND(AVG(precipitation_daily), 2) AS precipitation,
+                        ROUND(AVG(temperature_daily_mean), 2) AS temperature,
+                        ROUND(AVG(wind_speed_daily_mean), 2) AS wind_speed,
+                        ROUND(AVG(relative_humidity_daily_mean), 2) AS humidity
+                    FROM station_weather_daily
+                    WHERE station_id IN ({placeholders})
+                      AND YEAR(stat_date) = %s
+                      AND sunshine_duration_mean IS NOT NULL
+                    GROUP BY MONTH(stat_date)
+                    ORDER BY m""",
+                (*station_ids, year),
+            )
+            weather_monthly = cur.fetchall() or []
+
+            cur.execute(
+                f"""SELECT
+                        MONTH(stat_date) AS m,
+                        ROUND(AVG(soil_om_percent), 2) AS organic_matter,
+                        ROUND(AVG(soil_ph), 2) AS ph,
+                        ROUND(AVG(soil_p_ppm), 2) AS phosphorus,
+                        ROUND(AVG(soil_k_ppm), 2) AS potassium,
+                        ROUND(AVG(soil_ec_ds_m), 2) AS conductivity
+                    FROM station_soil_daily
+                    WHERE station_id IN ({placeholders})
+                      AND YEAR(stat_date) = %s
+                      AND soil_om_percent IS NOT NULL
+                    GROUP BY MONTH(stat_date)
+                    ORDER BY m""",
+                (*station_ids, year),
+            )
+            soil_monthly = cur.fetchall() or []
+    finally:
+        conn.close()
+
+    # Index weather and soil by month number
+    wm = {row["m"]: row for row in weather_monthly}
+    sm = {row["m"]: row for row in soil_monthly}
+
+    month_names = [
+        "1月", "2月", "3月", "4月", "5月", "6月",
+        "7月", "8月", "9月", "10月", "11月", "12月",
+    ]
+    monthly: list[dict[str, Any]] = []
+    for m in range(1, 13):
+        entry: dict[str, Any] = {"month": month_names[m - 1]}
+        if m in wm:
+            entry.update({
+                "sunshine": wm[m]["sunshine"],
+                "precipitation": wm[m]["precipitation"],
+                "temperature": wm[m]["temperature"],
+                "wind_speed": wm[m]["wind_speed"],
+                "humidity": wm[m]["humidity"],
+            })
+        if m in sm:
+            entry.update({
+                "organic_matter": sm[m]["organic_matter"],
+                "ph": sm[m]["ph"],
+                "phosphorus": sm[m]["phosphorus"],
+                "potassium": sm[m]["potassium"],
+                "conductivity": sm[m]["conductivity"],
+            })
+        monthly.append(entry)
+
+    return {"station_code": station_code, "year": year, "monthly": monthly}
+
+
 def _load_records_from_mysql(date_value: str) -> dict[str, list[dict[str, Any]]]:
     conn = pymysql.connect(
         host=os.getenv("MYSQL_HOST", "127.0.0.1"),

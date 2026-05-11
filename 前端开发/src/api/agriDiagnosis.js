@@ -104,6 +104,24 @@ export async function fetchMonitoringState(date) {
   return payload
 }
 
+export async function fetchStationRealtime(stationCode, date) {
+  const response = await fetch(`/api/station/${encodeURIComponent(stationCode)}/realtime?date=${encodeURIComponent(date)}`)
+  if (!response.ok) {
+    console.warn('站点实时数据加载失败:', response.status)
+    return { station_code: stationCode, date, weather: null, soil: null }
+  }
+  return response.json()
+}
+
+export async function fetchStationHistory(stationCode, year) {
+  const response = await fetch(`/api/station/${encodeURIComponent(stationCode)}/history?year=${encodeURIComponent(year)}`)
+  if (!response.ok) {
+    console.warn('站点历史数据加载失败:', response.status)
+    return { station_code: stationCode, year, monthly: [] }
+  }
+  return response.json()
+}
+
 export async function fetchHdfsPointData(date, point) {
   const response = await fetch(`${HDFS_BASE}/api/${encodeURIComponent(date)}/${encodeURIComponent(point)}/all.json`)
   if (!response.ok) {
