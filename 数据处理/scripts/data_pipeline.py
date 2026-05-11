@@ -21,7 +21,6 @@ Rice-Pro-Max 数据处理流水线
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -35,11 +34,16 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WEATHER_CSV = ROOT / "data" / "weather_hour.csv"
 DEFAULT_SOIL_CSV = ROOT / "data" / "soil_data.csv"
 
-ENV_MYSQL_HOST = os.environ.get("MYSQL_HOST", "127.0.0.1")
-ENV_MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))
-ENV_MYSQL_USER = os.environ.get("MYSQL_USER", "root")
-ENV_MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "123456")
-ENV_MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", "rice_pro_max")
+import json as _json
+with open(ROOT.parent / "conf" / "config.json", "r", encoding="utf-8") as _f:
+    _cfg = _json.load(_f)
+_MYSQL = _cfg["mysql"]
+
+ENV_MYSQL_HOST = _MYSQL["host"]
+ENV_MYSQL_PORT = _MYSQL["port"]
+ENV_MYSQL_USER = _MYSQL["user"]
+ENV_MYSQL_PASSWORD = _MYSQL["password"]
+ENV_MYSQL_DATABASE = _MYSQL["database"]
 
 # ── 表结构定义 ───────────────────────────────────────────
 

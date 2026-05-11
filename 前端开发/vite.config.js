@@ -1,9 +1,15 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@conf': path.resolve(__dirname, '../conf'),
+    },
+  },
   server: {
     // Explicit loopback to reduce issues when system proxy is enabled.
     host: '127.0.0.1',

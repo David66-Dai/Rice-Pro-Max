@@ -28,6 +28,10 @@ DATA_ROOT = APP_ROOT / "data"
 MONITOR_RECORD_FILE = DATA_ROOT / "monitoring_records.csv"
 MONITOR_JSON_ROOT = DATA_ROOT / "monitoring_json"
 
+with open(WORKSPACE_ROOT / "conf" / "config.json", "r", encoding="utf-8") as _f:
+    _config = json.load(_f)
+MYSQL_CFG = _config["mysql"]
+
 LEAF_MODEL_PATH = MODEL_ROOT / "leaf" / "best_model.pt"
 PEST_MODEL_PATH = MODEL_ROOT / "pest" / "best.pt"
 
@@ -157,11 +161,11 @@ def _save_monitoring_record_json(record: dict[str, Any]) -> None:
 
 def _save_monitoring_record_mysql(record: dict[str, Any]) -> None:
     conn = pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "123456"),
-        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        host=MYSQL_CFG["host"],
+        port=MYSQL_CFG["port"],
+        user=MYSQL_CFG["user"],
+        password=MYSQL_CFG["password"],
+        database=MYSQL_CFG["database"],
         charset="utf8mb4",
         autocommit=True,
     )
@@ -283,11 +287,11 @@ def _load_records_from_csv(date_value: str) -> dict[str, list[dict[str, Any]]]:
 def _mysql_query_db() -> pymysql.connections.Connection:
     """Return a connection with DictCursor for read queries (all tables)."""
     return pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "123456"),
-        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        host=MYSQL_CFG["host"],
+        port=MYSQL_CFG["port"],
+        user=MYSQL_CFG["user"],
+        password=MYSQL_CFG["password"],
+        database=MYSQL_CFG["database"],
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )
@@ -315,11 +319,14 @@ def get_station_realtime(station_code: str, date: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="date 格式必须为 YYYY-MM-DD")
 
     station_ids = _resolve_station_ids(station_code)
-    conn = _mysql_query_db()
     try:
-        weather = None
-        soil = None
+        conn = _mysql_query_db()
+    except Exception:
+        return {"station_code": station_code, "date": date, "weather": None, "soil": None}
 
+    weather = None
+    soil = None
+    try:
         with conn.cursor() as cur:
             # --- weather ---
             placeholders = ",".join(["%s"] * len(station_ids))
@@ -372,7 +379,11 @@ def get_station_realtime(station_code: str, date: str) -> dict[str, Any]:
 def get_station_history(station_code: str, year: int) -> dict[str, Any]:
     """Return monthly-aggregated weather/soil history for a station in a given year."""
     station_ids = _resolve_station_ids(station_code)
-    conn = _mysql_query_db()
+    try:
+        conn = _mysql_query_db()
+    except Exception:
+        return {"station_code": station_code, "year": year, "monthly": []}
+
     try:
         with conn.cursor() as cur:
             placeholders = ",".join(["%s"] * len(station_ids))
@@ -448,11 +459,11 @@ def get_station_history(station_code: str, year: int) -> dict[str, Any]:
 
 def _load_records_from_mysql(date_value: str) -> dict[str, list[dict[str, Any]]]:
     conn = pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "123456"),
-        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        host=MYSQL_CFG["host"],
+        port=MYSQL_CFG["port"],
+        user=MYSQL_CFG["user"],
+        password=MYSQL_CFG["password"],
+        database=MYSQL_CFG["database"],
         charset="utf8mb4",
         autocommit=True,
         cursorclass=pymysql.cursors.DictCursor,

@@ -13,6 +13,9 @@ checkpoints/
 .idea/
 .claude/
 
+# config (contains passwords & API keys)
+conf/*
+
 # api
 api/__pycache__/
 AI应用开发/api/

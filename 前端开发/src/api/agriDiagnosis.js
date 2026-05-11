@@ -1,4 +1,6 @@
-const HDFS_BASE = 'http://192.168.157.130:8000'
+import frontendConfig from '@conf/frontend.json'
+
+const HDFS_BASE = frontendConfig.hdfs_api_base
 
 function fixUnquotedUnits(jsonStr) {
   // Dify LLM 有时输出 "预计减产": 35公斤/亩 而非 "35公斤/亩"，修复为合法 JSON
