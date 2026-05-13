@@ -1,0 +1,51 @@
+{
+  "point": "ST-024",
+  "Date": "2025-04-08",
+  "records": [
+    {
+      "point": "ST-024",
+      "Date": "2025-04-08",
+      "GrowthPeriod": "分蘖期",
+      "GrowthStatus": "一般",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 1,
+      "PestCmNum": 0
+    }
+  ],
+  "mergedInspectItems": [
+    {
+      "key": "leaf_blight",
+      "name": "细菌性叶枯病",
+      "level": "normal"
+    },
+    {
+      "key": "leaf_brown_spot",
+      "name": "褐斑病",
+      "level": "normal"
+    },
+    {
+      "key": "leaf_tungro",
+      "name": "东格鲁病害",
+      "level": "normal"
+    },
+    {
+      "key": "pest_borer",
+      "name": "二化螟",
+      "level": "warn"
+    },
+    {
+      "key": "pest_planthopper",
+      "name": "褐飞虱",
+      "level": "normal"
+    },
+    {
+      "key": "pest_leafroller",
+      "name": "稻纵卷叶螟",
+      "level": "normal"
+    }
+  ],
+  "updatedAt": "2026-05-11 20:45:38"
+}

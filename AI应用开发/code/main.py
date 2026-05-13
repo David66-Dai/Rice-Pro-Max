@@ -13,6 +13,13 @@ from typing import NamedTuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # AI应用开发/code/
 API_DIR = SCRIPT_DIR.parent / "api"           # AI应用开发/api/
+CONF_DIR = SCRIPT_DIR.parent.parent / "conf"  # conf/
+
+with open(CONF_DIR / "config.json", "r", encoding="utf-8") as _f:
+    _config = json.load(_f)
+HDFS_CFG = _config["hdfs"]
+HIVE_CFG = _config["hive"]
+DIFY_CFG = _config["dify"]
 
 
 class PipelineResources(NamedTuple):
@@ -132,10 +139,14 @@ def load_resources(
             f"user={hive_user}, database={hive_database}"
         )
 
-    weather_api_url, weather_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_02.json"))
-    soil_api_url, soil_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_03.json"))
-    disease_api_url, disease_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_01.json"))
-    final_api_url, final_api_key = load_dify_workflow_run_config(str(API_DIR / "workflow_api_04.json"))
+    def _dify_url_key(name: str) -> tuple[str, str]:
+        c = DIFY_CFG[name]
+        return f"{c['base_url'].strip().rstrip('/')}/workflows/run", c["api_key"].strip()
+
+    weather_api_url, weather_api_key = _dify_url_key("weather")
+    soil_api_url, soil_api_key = _dify_url_key("soil")
+    disease_api_url, disease_api_key = _dify_url_key("disease")
+    final_api_url, final_api_key = _dify_url_key("final")
     return PipelineResources(
         management_df=hive.load_disease(),       # 从 Hive 读取病虫害数据
         weather_df=hive.load_weather(),          # 从 Hive 读取气象数据
@@ -231,24 +242,17 @@ def run_final_workflow(
     return main_output1, main_output2, main_output3
 
 if __name__ == "__main__":
-    TARGET_DATE = "2025-05-08" # 目标日期   
-    HDFS_HOST = "192.168.157.130"
-    HIVE_HOST = "192.168.157.130"
-    HDFS_PORT = 9870
-    HIVE_PORT = 10000
-    HDFS_USER = "root"
-    HIVE_USER = "root"
-    HIVE_DATABASE = "farm"
-    HDFS_PATH = f"/rice/output/{TARGET_DATE}"
+    TARGET_DATE = "2025-05-08" # 目标日期
+    HDFS_PATH = f"{HDFS_CFG['output_path']}/{TARGET_DATE}"
 
     resources = load_resources(
-        hive_host=HIVE_HOST,
-        hive_user=HIVE_USER,
-        hive_database=HIVE_DATABASE,
-        hive_port=HIVE_PORT
+        hive_host=HIVE_CFG["host"],
+        hive_user=HIVE_CFG["user"],
+        hive_database=HIVE_CFG["database"],
+        hive_port=HIVE_CFG["port"]
     )
     print("[conn] hive连接成功，数据资源加载完成")
-    hdfs_client = hdfs(namenode_host=HDFS_HOST, namenode_port=HDFS_PORT, user=HDFS_USER)
+    hdfs_client = hdfs(namenode_host=HDFS_CFG["host"], namenode_port=HDFS_CFG["port"], user=HDFS_CFG["user"])
     
     with requests.Session() as session:
         hdfs_client.mkdirs(HDFS_PATH)

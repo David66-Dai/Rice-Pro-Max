@@ -102,8 +102,8 @@ const INSPECT_DEFAULT_ITEMS = [
   { key: 'pest_leafroller', name: '稻纵卷叶螟', level: 'normal' }
 ]
 const LEAF_RISK_LEVEL_MAP = {
-  细菌性叶枯病: 'danger',
-  东格鲁病毒: 'danger',
+  细菌性叶枯病: 'warn',
+  东格鲁病毒: 'warn',
   褐斑病: 'warn'
 }
 const INSPECT_STORAGE_KEY = 'smart-agri.station-inspect-map.v2'
@@ -938,20 +938,27 @@ function getCurrentGrowthStatus() {
 }
 
 function buildMonitoringRecord() {
-  const leafProbabilities = leafResult.value?.raw?.probabilities ?? {}
+  // Model confidence is NOT disease coverage rate.
+  // When a disease is detected in a spot-check image, use a moderate coverage
+  // estimate (15%) to indicate "observed but severity unknown" → warn level.
+  // The definitive coverage rate comes from pest_data field surveys (imported CSV).
   const leafClassName = String(leafResult.value?.raw?.className ?? '')
   const leafLabel = String(leafResult.value?.label ?? '')
-  let bacterialLeafBlightRate = Number((Number(leafProbabilities['Bacterial Leaf Blight'] ?? 0) * 100).toFixed(2))
-  let brownSpotRate = Number((Number(leafProbabilities['Brown Spot'] ?? 0) * 100).toFixed(2))
-  let tungroVirusRate = Number((Number(leafProbabilities['Tungro Virus'] ?? 0) * 100).toFixed(2))
+  const hasDamage = leafResult.value?.raw?.hasLeafDamage
 
-  // 识别命中时给最小有效值，避免小概率被四舍五入为 0 后刷新回 normal。
-  if (leafClassName === 'Bacterial Leaf Blight' || leafLabel.includes('叶枯病')) {
-    bacterialLeafBlightRate = Math.max(bacterialLeafBlightRate, 50)
-  } else if (leafClassName === 'Brown Spot' || leafLabel.includes('褐斑病')) {
-    brownSpotRate = Math.max(brownSpotRate, 1)
-  } else if (leafClassName === 'Tungro Virus' || leafLabel.includes('东格鲁')) {
-    tungroVirusRate = Math.max(tungroVirusRate, 50)
+  let bacterialLeafBlightRate = 0
+  let brownSpotRate = 0
+  let tungroVirusRate = 0
+
+  if (hasDamage) {
+    const DETECTED_RATE = 15  // moderate estimate, backend maps 10–50 → warn
+    if (leafClassName === 'Bacterial Leaf Blight' || leafLabel.includes('叶枯病')) {
+      bacterialLeafBlightRate = DETECTED_RATE
+    } else if (leafClassName === 'Brown Spot' || leafLabel.includes('褐斑病')) {
+      brownSpotRate = DETECTED_RATE
+    } else if (leafClassName === 'Tungro Virus' || leafLabel.includes('东格鲁')) {
+      tungroVirusRate = DETECTED_RATE
+    }
   }
 
   return {
@@ -1093,7 +1100,7 @@ async function loadInspectMapFromServer(dateKey = selectedDateKey.value) {
 }
 
 function getCountLevel(count) {
-  if (count >= 3) return 'danger'
+  if (count >= 2) return 'danger'
   if (count >= 1) return 'warn'
   return 'normal'
 }

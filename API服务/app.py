@@ -28,6 +28,10 @@ DATA_ROOT = APP_ROOT / "data"
 MONITOR_RECORD_FILE = DATA_ROOT / "monitoring_records.csv"
 MONITOR_JSON_ROOT = DATA_ROOT / "monitoring_json"
 
+with open(WORKSPACE_ROOT / "conf" / "config.json", "r", encoding="utf-8") as _f:
+    _config = json.load(_f)
+MYSQL_CFG = _config["mysql"]
+
 LEAF_MODEL_PATH = MODEL_ROOT / "leaf" / "best_model.pt"
 PEST_MODEL_PATH = MODEL_ROOT / "pest" / "best.pt"
 
@@ -157,11 +161,11 @@ def _save_monitoring_record_json(record: dict[str, Any]) -> None:
 
 def _save_monitoring_record_mysql(record: dict[str, Any]) -> None:
     conn = pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "123456"),
-        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        host=MYSQL_CFG["host"],
+        port=MYSQL_CFG["port"],
+        user=MYSQL_CFG["user"],
+        password=MYSQL_CFG["password"],
+        database=MYSQL_CFG["database"],
         charset="utf8mb4",
         autocommit=True,
     )
@@ -182,7 +186,7 @@ def _save_monitoring_record_mysql(record: dict[str, Any]) -> None:
                     PestScsNum INT NOT NULL,
                     PestCmNum INT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    KEY idx_point_date (point, `Date`)
+                    UNIQUE KEY uk_point_date (point, `Date`)
                 )
                 """
             )
@@ -193,6 +197,15 @@ def _save_monitoring_record_mysql(record: dict[str, Any]) -> None:
                     BacterialLeafBlightRate, BrownSpotRate, TungroVirusRate,
                     PestRphNum, PestScsNum, PestCmNum
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    GrowthPeriod = VALUES(GrowthPeriod),
+                    GrowthStatus = VALUES(GrowthStatus),
+                    BacterialLeafBlightRate = VALUES(BacterialLeafBlightRate),
+                    BrownSpotRate = VALUES(BrownSpotRate),
+                    TungroVirusRate = VALUES(TungroVirusRate),
+                    PestRphNum = VALUES(PestRphNum),
+                    PestScsNum = VALUES(PestScsNum),
+                    PestCmNum = VALUES(PestCmNum)
                 """,
                 (
                     record["point"],
@@ -215,14 +228,14 @@ def _leaf_level_from_rates(record: dict[str, Any], field: str) -> str:
     rate = _to_float(record.get(field))
     if rate >= 50:
         return "danger"
-    if rate > 0:
+    if rate >= 10:
         return "warn"
     return "normal"
 
 
 def _count_level(value: Any) -> str:
     count = _to_int(value)
-    if count >= 3:
+    if count >= 2:
         return "danger"
     if count >= 1:
         return "warn"
@@ -283,11 +296,11 @@ def _load_records_from_csv(date_value: str) -> dict[str, list[dict[str, Any]]]:
 def _mysql_query_db() -> pymysql.connections.Connection:
     """Return a connection with DictCursor for read queries (all tables)."""
     return pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "123456"),
-        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        host=MYSQL_CFG["host"],
+        port=MYSQL_CFG["port"],
+        user=MYSQL_CFG["user"],
+        password=MYSQL_CFG["password"],
+        database=MYSQL_CFG["database"],
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )
@@ -315,11 +328,14 @@ def get_station_realtime(station_code: str, date: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="date 格式必须为 YYYY-MM-DD")
 
     station_ids = _resolve_station_ids(station_code)
-    conn = _mysql_query_db()
     try:
-        weather = None
-        soil = None
+        conn = _mysql_query_db()
+    except Exception:
+        return {"station_code": station_code, "date": date, "weather": None, "soil": None}
 
+    weather = None
+    soil = None
+    try:
         with conn.cursor() as cur:
             # --- weather ---
             placeholders = ",".join(["%s"] * len(station_ids))
@@ -372,7 +388,11 @@ def get_station_realtime(station_code: str, date: str) -> dict[str, Any]:
 def get_station_history(station_code: str, year: int) -> dict[str, Any]:
     """Return monthly-aggregated weather/soil history for a station in a given year."""
     station_ids = _resolve_station_ids(station_code)
-    conn = _mysql_query_db()
+    try:
+        conn = _mysql_query_db()
+    except Exception:
+        return {"station_code": station_code, "year": year, "monthly": []}
+
     try:
         with conn.cursor() as cur:
             placeholders = ",".join(["%s"] * len(station_ids))
@@ -448,11 +468,11 @@ def get_station_history(station_code: str, year: int) -> dict[str, Any]:
 
 def _load_records_from_mysql(date_value: str) -> dict[str, list[dict[str, Any]]]:
     conn = pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "123456"),
-        database=os.getenv("MYSQL_DATABASE", "rice_pro_max"),
+        host=MYSQL_CFG["host"],
+        port=MYSQL_CFG["port"],
+        user=MYSQL_CFG["user"],
+        password=MYSQL_CFG["password"],
+        database=MYSQL_CFG["database"],
         charset="utf8mb4",
         autocommit=True,
         cursorclass=pymysql.cursors.DictCursor,
@@ -680,16 +700,45 @@ async def diagnosis_pest(
     return output
 
 
+def _normalize_point_id(raw: str) -> str:
+    """Map point_8 / 8 / ST-008 all to ST-008 format."""
+    s = str(raw).strip()
+    # ST-008 → keep as-is
+    if s.upper().startswith("ST-"):
+        parts = s[3:]
+        try:
+            return f"ST-{int(parts):03d}"
+        except (TypeError, ValueError):
+            return s
+    # point_8 → ST-008
+    if s.lower().startswith("point_"):
+        parts = s[6:]
+        try:
+            return f"ST-{int(parts):03d}"
+        except (TypeError, ValueError):
+            return s
+    # Plain number 8 → ST-008
+    try:
+        return f"ST-{int(s):03d}"
+    except (TypeError, ValueError):
+        return s
+
+
 @app.post("/api/monitoring/record")
 def save_monitoring_record(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     record = _sanitize_monitoring_payload(payload)
-    _save_monitoring_record_local(record)
-    _save_monitoring_record_json(record)
-    try:
-        _save_monitoring_record_mysql(record)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"MySQL 写入失败: {exc}") from exc
-    return {"status": "ok", "savedLocal": True, "savedJSON": True, "savedMySQL": True}
+
+    # Primary: MySQL (fails the request if unavailable)
+    _save_monitoring_record_mysql(record)
+
+    # Secondary: JSON and CSV as best-effort cache
+    for fn in (_save_monitoring_record_json, _save_monitoring_record_local):
+        try:
+            fn(record)
+        except Exception:
+            pass
+
+    return {"status": "ok", "savedMySQL": True}
 
 
 @app.get("/api/monitoring/state")
@@ -702,7 +751,19 @@ def get_monitoring_state(date: str) -> dict[str, Any]:
     records_by_point = _load_records_from_json(date)
     if not records_by_point:
         records_by_point = _load_monitoring_records(date)
-    inspect_map = {point: _merge_record_items(records) for point, records in records_by_point.items()}
+    inspect_map: dict[str, list[dict[str, str]]] = {}
+    for point, records in records_by_point.items():
+        key = _normalize_point_id(point)
+        if key not in inspect_map:
+            inspect_map[key] = _merge_record_items(records)
+        else:
+            merged = _merge_record_items(records)
+            for item in merged:
+                existing = next((e for e in inspect_map[key] if e["key"] == item["key"]), None)
+                if existing:
+                    existing["level"] = _merge_level(existing["level"], item["level"])
+                else:
+                    inspect_map[key].append(item)
     return {"date": date, "stations": inspect_map}
 
 
