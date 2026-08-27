@@ -1,0 +1,40 @@
+{
+  "mysql_host": {
+    "description": "MySQL服务器地址",
+    "type": "string",
+    "default": "192.168.157.132"
+  },
+  "mysql_port": {
+    "description": "MySQL端口",
+    "type": "int",
+    "default": 3306
+  },
+  "mysql_user": {
+    "description": "MySQL只读账号",
+    "type": "string",
+    "default": "agri_ai_reader",
+    "hint": "建议使用仅拥有两张病虫害表SELECT权限的独立账号"
+  },
+  "mysql_password": {
+    "description": "MySQL密码",
+    "type": "string",
+    "default": ""
+  },
+  "mysql_database": {
+    "description": "MySQL数据库名称",
+    "type": "string",
+    "default": "rice_pro_max"
+  },
+  "allowed_umos": {
+    "description": "允许查询农业数据的微信UMO白名单",
+    "type": "list",
+    "default": [],
+    "hint": "必须填写完整UMO；可通过 /agri_query_status 查看当前会话UMO"
+  },
+  "max_range_days": {
+    "description": "单次历史查询最多允许的天数",
+    "type": "int",
+    "default": 31,
+    "hint": "有效范围1至366天，建议保持31天"
+  }
+}

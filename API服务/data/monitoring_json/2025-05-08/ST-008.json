@@ -61,6 +61,30 @@
       "PestRphNum": 0,
       "PestScsNum": 0,
       "PestCmNum": 0
+    },
+    {
+      "point": "ST-008",
+      "Date": "2025-05-08",
+      "GrowthPeriod": "分蘖期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 0.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 1,
+      "PestCmNum": 0
+    },
+    {
+      "point": "ST-008",
+      "Date": "2025-05-08",
+      "GrowthPeriod": "分蘖期",
+      "GrowthStatus": "较差",
+      "BacterialLeafBlightRate": 0.0,
+      "BrownSpotRate": 15.0,
+      "TungroVirusRate": 0.0,
+      "PestRphNum": 0,
+      "PestScsNum": 1,
+      "PestCmNum": 0
     }
   ],
   "mergedInspectItems": [
@@ -82,7 +106,7 @@
     {
       "key": "pest_borer",
       "name": "二化螟",
-      "level": "normal"
+      "level": "warn"
     },
     {
       "key": "pest_planthopper",
@@ -95,5 +119,5 @@
       "level": "normal"
     }
   ],
-  "updatedAt": "2026-05-11 20:44:51"
+  "updatedAt": "2026-08-18 11:54:23"
 }

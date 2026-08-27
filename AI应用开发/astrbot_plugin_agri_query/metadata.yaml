@@ -1,0 +1,9 @@
+name: astrbot_plugin_agri_query
+display_name: 智慧农业对话查询
+desc: 通过 AstrBot AI 工具只读查询病虫害监测数据和微信告警状态。
+version: v1.0.3
+author: danglong
+repo: ""
+astrbot_version: ">=4.5.7,<5"
+support_platforms:
+  - weixin_oc

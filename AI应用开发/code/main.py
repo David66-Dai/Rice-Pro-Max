@@ -256,7 +256,7 @@ if __name__ == "__main__":
     
     with requests.Session() as session:
         hdfs_client.mkdirs(HDFS_PATH)
-        for station_num in range(1, 31):
+        for station_num in range(1, 26):
             print(f"[start]开始处理站点{station_num}")
             input1, input2, input3, input4 = build_inputs(
                 target_date=TARGET_DATE,

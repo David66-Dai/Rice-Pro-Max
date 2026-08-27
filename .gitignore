@@ -15,6 +15,18 @@ AI应用开发/api/
 
 # tests
 API服务/readhdfs/ceshi.*
+AI应用开发/code/*_ys.py
+*演示*
+AI应用开发/工作流输入
+*测试*
 
 # data
 AI应用开发/示例json/*
+API服务/data/*
+*/data
+
+# conf
+conf/*.json
+
+# pluginZip
+*plugin*.zip
