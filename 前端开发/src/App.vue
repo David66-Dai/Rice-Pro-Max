@@ -791,7 +791,7 @@ function getPlanHdfsName(planType) {
 const planDialogTitle = computed(() => {
   const hdfsName = getPlanHdfsName(activePlanDialog.value)
   if (hdfsName) return hdfsName
-  return activePlanDialog.value === 'A' ? '方案A：虫害压制方案' : '方案B：病害抑制方案'
+  return activePlanDialog.value === 'A' ? '方案A（高效高成本快控型）' : '方案B（经济稳控强化农艺型）'
 })
 
 const planDialogPhases = computed(() => {
@@ -1312,7 +1312,7 @@ onBeforeUnmount(() => {
         <div class="title-box">
           <span class="title-decor title-decor-left"></span>
           <div class="title-core">
-            <h1>智慧农业舱</h1>
+            <h1>数智稻安</h1>
             <span class="title-glow"></span>
           </div>
           <span class="title-decor title-decor-right"></span>
